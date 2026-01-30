@@ -280,6 +280,9 @@
       style="display: none"
       @change="handleFolderSelect"
     />
+
+    <!-- 文件详情弹窗 -->
+    <FileDetailModal />
   </div>
 </template>
 
@@ -299,6 +302,7 @@ import ModelSelectorComponent from '@/components/ModelSelectorComponent.vue'
 import EmbeddingModelSelector from '@/components/EmbeddingModelSelector.vue'
 import ShareConfigForm from '@/components/ShareConfigForm.vue'
 import FileTable from '@/components/FileTable.vue'
+import FileDetailModal from '@/components/FileDetailModal.vue'
 import { parseToShanghai } from '@/utils/time'
 import AiTextarea from '@/components/AiTextarea.vue'
 import { getKbTypeLabel, getKbTypeIcon, getKbTypeColor } from '@/utils/kb_utils'

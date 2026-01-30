@@ -405,12 +405,8 @@ export const useDatabaseStore = defineStore('database', () => {
   }
 
   async function openFileDetail(record) {
-    // 只要有 markdown_file (隐含在 status >= parsed 中) 或者是 error_indexing (说明解析成功但入库失败)，就可以查看
-    const allowStatuses = ['done', 'parsed', 'indexed', 'error_indexing']
-    if (!allowStatuses.includes(record.status)) {
-      message.error('文件未处理完成，请稍后再试')
-      return
-    }
+    // 允许所有状态的文件查看详情，让后端决定是否有内容可显示
+    // 如果文件未处理完成，后端会返回相应的状态，前端会显示"暂无文件内容"
     state.fileDetailModalVisible = true
     selectedFile.value = { ...record, lines: [] }
     state.fileDetailLoading = true
@@ -419,14 +415,14 @@ export const useDatabaseStore = defineStore('database', () => {
     try {
       const data = await documentApi.getDocumentInfo(databaseId.value, record.file_id)
       if (data.status == 'failed') {
-        message.error(data.message)
+        message.error(data.message || '获取文件详情失败')
         state.fileDetailModalVisible = false
         return
       }
       selectedFile.value = { ...record, lines: data.lines || [], content: data.content }
     } catch (error) {
-      console.error(error)
-      message.error(error.message)
+      console.error('获取文件详情失败:', error)
+      message.error(error.message || '获取文件详情失败')
       state.fileDetailModalVisible = false
     } finally {
       state.fileDetailLoading = false
