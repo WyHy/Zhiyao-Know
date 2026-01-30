@@ -191,7 +191,7 @@
       row-key="file_id"
       class="my-table"
       size="small"
-      :show-header="false"
+      :show-header="true"
       :pagination="tablePagination"
       @change="handleTableChange"
       v-model:expandedRowKeys="expandedRowKeys"
@@ -247,7 +247,7 @@
                 </div>
               </div>
             </template>
-            <a-button class="main-btn" type="link" @click="openFileDetail(record)">
+            <a-button class="main-btn" type="link" @click.stop="openFileDetail(record)">
               <component
                 :is="getFileIcon(record.displayName || text)"
                 :style="{
@@ -268,11 +268,11 @@
         <span v-else-if="column.key === 'created_at'">
           {{ record.created_at ? formatRelativeTime(record.created_at) : '-' }}
         </span>
-        <span v-else-if="column.key === 'size'">
+        <!-- 隐藏大小列 -->
+        <!-- <span v-else-if="column.key === 'size'">
           {{ record.size ? formatFileSize(record.size) : '-' }}
-        </span>
-        <!-- 隐藏状态列 -->
-        <!-- <div
+        </span> -->
+        <div
           v-else-if="column.key === 'status'"
           style="display: flex; align-items: center; justify-content: flex-end"
         >
@@ -306,7 +306,7 @@
               <span v-else>{{ text }}</span>
             </a-tooltip>
           </template>
-        </div> -->
+        </div>
 
         <div v-else-if="column.key === 'action'" class="table-row-actions">
           <a-popover
@@ -654,7 +654,12 @@ const handleCreateFolder = async () => {
 const customRow = (record) => {
   return {
     draggable: true,
-    onClick: () => {
+    onClick: (event) => {
+      // 如果点击的是文件名按钮或其他交互元素，不处理行点击
+      // 让按钮的点击事件正常触发
+      if (event.target.closest('.main-btn') || event.target.closest('button') || event.target.closest('a')) {
+        return
+      }
       console.log('Clicked file record:', record)
     },
     onDragstart: (event) => {
@@ -814,42 +819,42 @@ const columnsCompact = [
     },
     sortDirections: ['ascend', 'descend']
   },
-  {
-    title: '大小',
-    dataIndex: 'size',
-    key: 'size',
-    width: 100,
-    align: 'right',
-    sorter: (a, b) => {
-      return (a.size || 0) - (b.size || 0)
-    },
-    sortDirections: ['ascend', 'descend']
-  },
-  // 隐藏状态列
+  // 隐藏大小列
   // {
-  //   title: '状态',
-  //   dataIndex: 'status',
-  //   key: 'status',
-  //   width: 60,
+  //   title: '大小',
+  //   dataIndex: 'size',
+  //   key: 'size',
+  //   width: 100,
   //   align: 'right',
   //   sorter: (a, b) => {
-  //     const statusOrder = {
-  //       done: 1,
-  //       indexed: 1,
-  //       processing: 2,
-  //       indexing: 2,
-  //       parsing: 2,
-  //       waiting: 3,
-  //       uploaded: 3,
-  //       parsed: 3,
-  //       failed: 4,
-  //       error_indexing: 4,
-  //       error_parsing: 4
-  //     }
-  //     return (statusOrder[a.status] || 5) - (statusOrder[b.status] || 5)
+  //     return (a.size || 0) - (b.size || 0)
   //   },
   //   sortDirections: ['ascend', 'descend']
   // },
+  {
+    title: '状态',
+    dataIndex: 'status',
+    key: 'status',
+    width: 60,
+    align: 'right',
+    sorter: (a, b) => {
+      const statusOrder = {
+        done: 1,
+        indexed: 1,
+        processing: 2,
+        indexing: 2,
+        parsing: 2,
+        waiting: 3,
+        uploaded: 3,
+        parsed: 3,
+        failed: 4,
+        error_indexing: 4,
+        error_parsing: 4
+      }
+      return (statusOrder[a.status] || 5) - (statusOrder[b.status] || 5)
+    },
+    sortDirections: ['ascend', 'descend']
+  },
   { title: '', key: 'action', dataIndex: 'file_id', width: 40, align: 'center' }
 ]
 
