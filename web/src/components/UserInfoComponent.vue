@@ -1,7 +1,7 @@
 <template>
   <div class="user-info-component">
     <a-dropdown :trigger="['hover']" v-if="userStore.isLoggedIn">
-      <div class="user-info-dropdown" :data-align="showRole ? 'left' : 'center'">
+      <div class="user-info-dropdown" :data-align="showRole ? 'left' : 'left'">
         <div class="user-avatar">
           <img
             v-if="userStore.avatar"
@@ -12,7 +12,7 @@
           <CircleUser v-else />
           <!-- <div class="user-role-badge" :class="userRoleClass"></div> -->
         </div>
-        <div v-if="showRole">{{ userStore.username }}</div>
+        <div class="user-name-text">{{ userStore.username }}</div>
       </div>
       <template #overlay>
         <a-menu>
@@ -26,9 +26,6 @@
             </div>
           </a-menu-item>
           <a-menu-divider />
-          <a-menu-item key="docs" @click="openDocs" :icon="BookOpenIcon">
-            <span class="menu-text">文档中心</span>
-          </a-menu-item>
           <a-menu-item
             key="theme"
             @click="toggleTheme"
@@ -39,14 +36,15 @@
             }}</span>
           </a-menu-item>
           <a-menu-divider v-if="userStore.isAdmin" />
-          <a-menu-item
+          <!-- 调试面板暂时注释 -->
+          <!-- <a-menu-item
             v-if="userStore.isSuperAdmin"
             key="debug"
             @click="showDebug = true"
             :icon="TerminalIcon"
           >
             <span class="menu-text">调试面板（非生产环境）</span>
-          </a-menu-item>
+          </a-menu-item> -->
           <a-menu-item
             v-if="userStore.isAdmin"
             key="setting"
@@ -188,7 +186,7 @@ import { message } from 'ant-design-vue'
 import {
   CircleUser,
   UserRoundCheck,
-  BookOpen,
+  // BookOpen,
   Sun,
   Moon,
   User,
@@ -204,7 +202,7 @@ const userStore = useUserStore()
 const themeStore = useThemeStore()
 
 // 预定义图标组件，避免 Vue 警告
-const BookOpenIcon = h(BookOpen, { size: '16' })
+// const BookOpenIcon = h(BookOpen, { size: '16' })
 const SunIcon = h(Sun, { size: '16' })
 const MoonIcon = h(Moon, { size: '16' })
 const TerminalIcon = h(Terminal, { size: '16' })
@@ -270,18 +268,19 @@ const userRoleClass = computed(() => {
 const logout = () => {
   userStore.logout()
   message.success('已退出登录')
-  // 跳转到首页
-  router.push('/login')
+  // 跳转到首页（登录页）
+  router.push('/')
 }
 
 // 前往登录页
 const goToLogin = () => {
-  router.push('/login')
+  router.push('/')
 }
 
-const openDocs = () => {
-  window.open('https://xerrors.github.io/Yuxi-Know/', '_blank', 'noopener,noreferrer')
-}
+// 文档中心功能已移除
+// const openDocs = () => {
+//   window.open('https://xerrors.github.io/Yuxi-Know/', '_blank', 'noopener,noreferrer')
+// }
 
 const toggleTheme = () => {
   themeStore.toggleTheme()
@@ -441,6 +440,7 @@ const handleAvatarChange = async (info) => {
   display: flex;
   align-items: center;
   gap: 8px;
+  justify-content: flex-start;
 
   &[data-align='center'] {
     justify-content: center;
@@ -449,6 +449,16 @@ const handleAvatarChange = async (info) => {
   &[data-align='left'] {
     justify-content: flex-start;
   }
+}
+
+.user-name-text {
+  font-size: 13px;
+  color: var(--gray-700);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
 }
 
 .user-avatar {
@@ -466,7 +476,7 @@ const handleAvatarChange = async (info) => {
   box-shadow: 0 2px 8px var(--shadow-2);
 
   &:hover {
-    opacity: 0.9;
+    // opacity: 0.9; // 移除灰调效果，保持原色
   }
 
   .avatar-image {
