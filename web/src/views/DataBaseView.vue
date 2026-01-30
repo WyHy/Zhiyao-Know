@@ -96,6 +96,7 @@
       :footer="null"
       width="500px"
       destroyOnClose
+      @cancel="tempSelectedDatabaseIdForUpload = null"
     >
       <div class="select-database-modal">
         <div class="selected-files-info">
@@ -120,7 +121,7 @@
         </div>
         <div class="database-select-label">请选择上传的知识库</div>
         <a-select
-          v-model:value="selectedDatabaseId"
+          v-model:value="tempSelectedDatabaseIdForUpload"
           placeholder="请选择知识库"
           size="large"
           style="width: 100%"
@@ -155,7 +156,6 @@
           :key="task.id"
           class="upload-task-item"
         >
-          <a-checkbox v-model:checked="task.checked" />
           <div class="file-icon-wrapper">
             <component :is="getFileIcon(task.fileName)" class="file-icon" />
           </div>
@@ -284,7 +284,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive, watch, computed, onBeforeUnmount } from 'vue'
+import { ref, onMounted, reactive, watch, computed, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useConfigStore } from '@/stores/config'
@@ -322,6 +322,8 @@ const state = reactive({
 
 // 选中的知识库ID
 const selectedDatabaseId = ref(null)
+// 上传时临时选择的知识库ID（用于模态框，避免影响主界面）
+const tempSelectedDatabaseIdForUpload = ref(null)
 
 // 上传相关
 const uploadType = ref('file') // 'file' | 'folder'
@@ -402,10 +404,14 @@ const completedCount = computed(() => {
 })
 
 const filteredUploadTasks = computed(() => {
+  const tasks = uploadTasks.value
   if (uploadTabActiveKey.value === 'uploading') {
-    return uploadTasks.value.filter((t) => t.status === 'uploading')
+    // 显示正在上传和等待中的任务
+    return tasks.filter((t) => t.status === 'uploading' || t.status === 'pending')
+  } else {
+    // 显示已完成的任务（包括成功、失败、取消）
+    return tasks.filter((t) => ['success', 'error', 'cancelled'].includes(t.status))
   }
-  return uploadTasks.value.filter((t) => ['success', 'error'].includes(t.status))
 })
 
 // 加载支持的知识库类型
@@ -545,7 +551,9 @@ const getUploadIcon = () => {
 
 // 确认上传
 const confirmUpload = async () => {
-  if (!selectedDatabaseId.value) {
+  // 使用临时选择的知识库ID
+  const uploadDatabaseId = tempSelectedDatabaseIdForUpload.value
+  if (!uploadDatabaseId) {
     message.error('请选择知识库')
     return
   }
@@ -558,16 +566,23 @@ const confirmUpload = async () => {
   uploading.value = true
   state.selectDatabaseModalVisible = false
 
-  // 创建上传任务
-  const tasks = selectedFiles.value.map((file) => ({
-    id: `upload_${Date.now()}_${Math.random()}`,
-    fileName: file.name,
-    size: file.size,
-    file: file,
-    progress: 0,
-    status: 'pending',
-    checked: true
-  }))
+  // 创建上传任务（使用 reactive 确保响应式）
+  const tasks = selectedFiles.value.map((file) => {
+    return reactive({
+      id: `upload_${Date.now()}_${Math.random()}`,
+      fileName: file.name,
+      size: file.size,
+      file: file,
+      progress: 0,
+      status: 'pending',
+      taskId: null,
+      xhr: null,
+      error: null,
+      dbId: uploadDatabaseId, // 保存上传目标的知识库ID
+      file_path: null, // 上传后返回的文件路径
+      content_hash: null // 上传后返回的内容哈希
+    })
+  })
 
   uploadTasks.value.push(...tasks)
   
@@ -576,14 +591,51 @@ const confirmUpload = async () => {
 
   // 开始上传（并发上传，不等待完成）
   tasks.forEach(task => {
-    uploadFile(task, selectedDatabaseId.value).catch(error => {
+    // 立即更新状态为 uploading，确保 UI 显示
+    task.status = 'uploading'
+    uploadFile(task, uploadDatabaseId).catch(error => {
       console.error('上传失败:', error)
       // 错误已在 uploadFile 中处理
     })
   })
 
   selectedFiles.value = []
+  tempSelectedDatabaseIdForUpload.value = null // 清空临时选择
   uploading.value = false
+}
+
+// 将文件添加到知识库（参考 FileUploadModal 的 chunkData 逻辑）
+const addFileToDatabase = async (task, dbId) => {
+  if (!task.file_path) {
+    throw new Error('文件路径不存在')
+  }
+  
+  // 设置当前知识库ID（addFiles 需要）
+  const originalDbId = databaseStore.databaseId
+  databaseStore.databaseId = dbId
+  
+  try {
+    const params = {
+      content_type: 'file',
+      enable_ocr: 'disable' // 默认不启用 OCR，可以根据需要调整
+    }
+    
+    const content_hashes = {}
+    if (task.content_hash) {
+      content_hashes[task.file_path] = task.content_hash
+      params.content_hashes = content_hashes
+    }
+    
+    await databaseStore.addFiles({
+      items: [task.file_path],
+      contentType: 'file',
+      params: params,
+      parentId: null // 上传到根目录
+    })
+  } finally {
+    // 恢复原始知识库ID
+    databaseStore.databaseId = originalDbId
+  }
 }
 
 // 上传文件（使用 XMLHttpRequest 跟踪进度）
@@ -600,24 +652,34 @@ const uploadFile = async (task, dbId) => {
     }
 
     const formData = new FormData()
-    // 处理文件夹上传的文件名
-    if (uploadType.value === 'folder' && task.file.webkitRelativePath) {
-      formData.append('file', task.file, task.file.webkitRelativePath)
-    } else {
-      formData.append('file', task.file)
-    }
+    // 处理文件夹上传的文件名（参考 FileUploadModal 的实现）
+    const filename =
+      uploadType.value === 'folder' && task.file.webkitRelativePath
+        ? task.file.webkitRelativePath
+        : task.file.name
+    formData.append('file', task.file, filename)
 
     const xhr = new XMLHttpRequest()
-    const url =
-      uploadType.value === 'folder'
-        ? `/api/knowledge/files/upload-folder?db_id=${dbId}`
-        : `/api/knowledge/files/upload?db_id=${dbId}`
+    // 统一使用 upload 接口，通过 webkitRelativePath 来区分文件夹上传（与 FileUploadModal 保持一致）
+    const url = `/api/knowledge/files/upload?db_id=${dbId}`
 
     // 先设置进度监听
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        task.progress = Math.round((e.loaded / e.total) * 100)
+      if (e.lengthComputable && e.total > 0) {
+        const newProgress = Math.round((e.loaded / e.total) * 100)
+        task.progress = newProgress
+        console.log(`上传进度更新: ${task.fileName} - ${newProgress}% (${e.loaded}/${e.total})`)
+      } else {
+        // 如果无法计算总大小，至少显示已上传的字节数
+        console.log(`上传中: ${task.fileName} - 已上传 ${e.loaded} 字节`)
       }
+    }
+    
+    // 添加 loadstart 事件，确保上传开始
+    xhr.upload.onloadstart = () => {
+      console.log(`开始上传: ${task.fileName}`)
+      task.status = 'uploading'
+      task.progress = 0
     }
 
     // 先打开连接
@@ -637,29 +699,77 @@ const uploadFile = async (task, dbId) => {
     // 存储 xhr 实例以便取消
     task.xhr = xhr
 
+    // 添加一个定时器，如果进度事件没有触发，至少显示一个最小进度
+    let progressTimer = null
+    const startProgressSimulation = () => {
+      // 如果 2 秒后进度仍然是 0，开始模拟进度（最多到 90%）
+      progressTimer = setTimeout(() => {
+        if (task.progress === 0 && task.status === 'uploading') {
+          // 开始模拟进度，但不超过 90%，等待实际完成
+          let simulatedProgress = 10
+          const simulateInterval = setInterval(() => {
+            if (task.progress < 90 && task.status === 'uploading') {
+              simulatedProgress = Math.min(simulatedProgress + 5, 90)
+              task.progress = simulatedProgress
+            } else {
+              clearInterval(simulateInterval)
+            }
+          }, 500)
+        }
+      }, 2000)
+    }
+    
+    // 清除模拟进度的定时器
+    const clearProgressSimulation = () => {
+      if (progressTimer) {
+        clearTimeout(progressTimer)
+        progressTimer = null
+      }
+    }
+
     xhr.onload = () => {
+      clearProgressSimulation()
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const result = JSON.parse(xhr.responseText)
-          // 文件上传完成
+          // 保存文件路径和内容哈希（用于后续添加到知识库）
+          task.file_path = result.file_path
+          task.content_hash = result.content_hash
+          
+          // 文件上传完成，确保进度为 100%
           task.progress = 100
-          task.status = 'success'
+          task.status = 'uploaded' // 先标记为已上传，等待添加到知识库
+          console.log(`文件上传成功: ${task.fileName}`, result)
+          
+          // 强制触发响应式更新
+          nextTick(() => {
+            // 确保状态已更新
+            if (task.status !== 'uploaded') {
+              task.status = 'uploaded'
+            }
+          })
+          
+          // 立即调用 addFiles 将文件添加到知识库（参考 FileUploadModal 的流程）
+          addFileToDatabase(task, dbId).then(() => {
+            task.status = 'success'
+            console.log(`文件已添加到知识库: ${task.fileName}`)
+            
+            // 如果当前选中的知识库就是上传目标，刷新文件列表
+            if (selectedDatabaseId.value === dbId) {
+              setTimeout(() => {
+                databaseStore.getDatabaseInfo(dbId, false, true).catch(error => {
+                  console.error('刷新知识库文件列表失败:', error)
+                })
+              }, 500)
+            }
+          }).catch(error => {
+            task.status = 'error'
+            task.error = error.message || '添加到知识库失败'
+            console.error(`添加到知识库失败: ${task.fileName}`, error)
+          })
           
           if (result.task_id) {
-            // 注册任务到任务中心（用于跟踪后续处理进度，如解析、入库等）
-            taskerStore.registerQueuedTask({
-              task_id: result.task_id,
-              name: `处理${task.fileName}`,
-              task_type: 'knowledge_ingest',
-              message: '文件上传完成，正在处理',
-              payload: {
-                db_id: dbId,
-                file_name: task.fileName
-              }
-            })
             task.taskId = result.task_id
-            // 上传已完成，但后续处理可能需要时间
-            // 保持 status 为 'success'（上传成功），后续处理状态通过轮询更新
           }
           resolve(result)
         } catch (e) {
@@ -682,16 +792,21 @@ const uploadFile = async (task, dbId) => {
     }
 
     xhr.onerror = () => {
+      clearProgressSimulation()
       task.status = 'error'
       task.error = '网络错误'
       reject(new Error('网络错误'))
     }
 
     xhr.onabort = () => {
+      clearProgressSimulation()
       task.status = 'cancelled'
       task.error = '用户取消上传'
       reject(new Error('用户取消上传'))
     }
+    
+    // 开始进度模拟（如果进度事件没有触发）
+    startProgressSimulation()
 
     // 发送请求（xhr.open 已在上面调用过）
     xhr.send(formData)
@@ -748,6 +863,21 @@ const pollUploadTasks = async () => {
     if (allCompleted) {
       const successCount = uploadTasks.value.filter((t) => t.status === 'success').length
       message.success(`上传成功 共${successCount}项`)
+      
+      // 获取所有上传成功的任务对应的知识库ID（去重）
+      const uploadedDbIds = [...new Set(
+        uploadTasks.value
+          .filter((t) => t.status === 'success' && t.dbId)
+          .map((t) => t.dbId)
+      )]
+      
+      // 如果当前选中的知识库在上传列表中，刷新文件列表
+      if (selectedDatabaseId.value && uploadedDbIds.includes(selectedDatabaseId.value)) {
+        databaseStore.getDatabaseInfo(selectedDatabaseId.value, false, true).catch(error => {
+          console.error('刷新知识库文件列表失败:', error)
+        })
+      }
+      
       stopPolling()
     }
   } catch (error) {
