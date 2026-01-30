@@ -94,7 +94,7 @@ export async function apiRequest(url, options = {}, requiresAuth = true, respons
 
         // 使用setTimeout确保消息显示后再跳转
         setTimeout(() => {
-          window.location.href = '/login'
+          window.location.href = '/'
         }, 1500)
 
         throw new Error('未授权，请先登录')

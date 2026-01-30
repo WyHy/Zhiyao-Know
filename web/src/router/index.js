@@ -9,19 +9,6 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      name: 'main',
-      component: BlankLayout,
-      children: [
-        {
-          path: '',
-          name: 'Home',
-          component: () => import('../views/HomeView.vue'),
-          meta: { keepAlive: true, requiresAuth: false }
-        }
-      ]
-    },
-    {
-      path: '/login',
       name: 'login',
       component: () => import('../views/LoginView.vue'),
       meta: { requiresAuth: false }
@@ -125,7 +112,7 @@ router.beforeEach(async (to, from, next) => {
   if (requiresAuth && !isLoggedIn) {
     // 保存尝试访问的路径，登录后跳转
     sessionStorage.setItem('redirect', to.fullPath)
-    next('/login')
+    next('/')
     return
   }
 
@@ -159,9 +146,9 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  // 如果用户已登录但访问登录页
-  if (to.path === '/login' && isLoggedIn) {
-    next('/')
+  // 如果用户已登录但访问登录页（首页），默认跳转到知识库
+  if (to.path === '/' && isLoggedIn) {
+    next('/database')
     return
   }
 

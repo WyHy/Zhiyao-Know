@@ -1,6 +1,22 @@
 <template>
   <div class="file-table-container">
     <div class="panel-header">
+      <!-- 左侧：搜索 -->
+      <div class="panel-actions-right">
+        <a-input
+          v-model:value="filenameFilter"
+          placeholder="搜索文件"
+          size="small"
+          class="action-searcher"
+          allow-clear
+          @change="onFilterChange"
+        >
+          <template #prefix>
+            <Search size="14" style="color: var(--gray-400)" />
+          </template>
+        </a-input>
+      </div>
+      <!-- 右侧：上传、新建和刷新 -->
       <div class="upload-btn-group">
         <a-dropdown trigger="click">
           <a-button type="primary" size="small" class="upload-btn">
@@ -24,13 +40,13 @@
               >
                 上传文件夹
               </a-menu-item>
-              <a-menu-item
+              <!-- <a-menu-item
                 key="upload-url"
                 @click="showAddFilesModal({ mode: 'url' })"
                 :icon="h(Link, { size: 16 })"
               >
                 解析 URL
-              </a-menu-item>
+              </a-menu-item> -->
             </a-menu>
           </template>
         </a-dropdown>
@@ -44,57 +60,6 @@
         >
           <template #icon><FolderPlus size="16" /></template>
         </a-button>
-      </div>
-      <div class="panel-actions">
-        <a-input
-          v-model:value="filenameFilter"
-          placeholder="搜索"
-          size="small"
-          class="action-searcher"
-          allow-clear
-          @change="onFilterChange"
-        >
-          <template #prefix>
-            <Search size="14" style="color: var(--gray-400)" />
-          </template>
-        </a-input>
-
-        <a-dropdown trigger="click">
-          <a-button
-            type="text"
-            class="panel-action-btn"
-            :class="{ active: sortField !== 'filename' }"
-            title="排序"
-          >
-            <template #icon><ArrowUpDown size="16" /></template>
-          </a-button>
-          <template #overlay>
-            <a-menu :selectedKeys="[sortField]" @click="handleSortMenuClick">
-              <a-menu-item v-for="opt in sortOptions" :key="opt.value">
-                {{ opt.label }}
-              </a-menu-item>
-            </a-menu>
-          </template>
-        </a-dropdown>
-
-        <a-dropdown trigger="click">
-          <a-button
-            type="text"
-            class="panel-action-btn"
-            :class="{ active: statusFilter !== 'all' }"
-            title="筛选状态"
-          >
-            <template #icon><Filter size="16" /></template>
-          </a-button>
-          <template #overlay>
-            <a-menu :selectedKeys="[statusFilter]" @click="handleStatusMenuClick">
-              <a-menu-item key="all">全部状态</a-menu-item>
-              <a-menu-item v-for="opt in statusOptions" :key="opt.value">
-                {{ opt.label }}
-              </a-menu-item>
-            </a-menu>
-          </template>
-        </a-dropdown>
 
         <a-button
           type="text"
@@ -105,7 +70,9 @@
         >
           <template #icon><RotateCw size="16" /></template>
         </a-button>
-        <a-button
+      </div>
+        <!-- 隐藏多选按钮，多选状态默认开启 -->
+        <!-- <a-button
           type="text"
           @click="toggleSelectionMode"
           title="多选"
@@ -113,7 +80,7 @@
           :class="{ active: isSelectionMode }"
         >
           <template #icon><CheckSquare size="16" /></template>
-        </a-button>
+        </a-button> -->
         <!-- <a-button
           @click="toggleAutoRefresh"
           size="small"
@@ -123,7 +90,8 @@
         >
           Auto
         </a-button> -->
-        <a-button
+        <!-- 暂时隐藏切换右侧面板按钮（检索配置） -->
+        <!-- <a-button
           type="text"
           @click="toggleRightPanel"
           title="切换右侧面板"
@@ -131,11 +99,10 @@
           :class="{ expanded: props.rightPanelVisible }"
         >
           <template #icon><ChevronLast size="16" /></template>
-        </a-button>
-      </div>
+        </a-button> -->
     </div>
 
-    <div class="batch-actions" v-if="isSelectionMode">
+    <div class="batch-actions">
       <div class="batch-info">
         <a-checkbox
           :checked="isAllSelected"
@@ -146,7 +113,8 @@
         <span>{{ selectedRowKeys.length }} 项</span>
       </div>
       <div style="display: flex; gap: 2px">
-        <a-button
+        <!-- 隐藏批量解析和批量入库 -->
+        <!-- <a-button
           type="link"
           @click="handleBatchParse"
           :loading="batchParsing"
@@ -163,7 +131,7 @@
           :icon="h(Database, { size: 16 })"
         >
           批量入库
-        </a-button>
+        </a-button> -->
         <a-button
           type="link"
           danger
@@ -172,7 +140,7 @@
           :disabled="!canBatchDelete"
           :icon="h(Trash2, { size: 16 })"
         >
-          批量删除
+          删除
         </a-button>
       </div>
     </div>
@@ -192,6 +160,16 @@
         <ChunkParamsConfig :temp-chunk-params="indexParams" :show-qa-split="true" />
       </div>
     </a-modal>
+
+    <!-- 文件上传模态框 -->
+    <FileUploadModal
+      v-model:visible="addFilesModalVisible"
+      :folder-tree="folderTree"
+      :current-folder-id="currentFolderId"
+      :is-folder-mode="isFolderUploadMode"
+      :mode="addFilesMode"
+      @success="onFileUploadSuccess"
+    />
 
     <!-- 新建文件夹模态框 -->
     <a-modal
@@ -287,7 +265,14 @@
             text?.toUpperCase()
           }}</span>
         </span>
-        <div
+        <span v-else-if="column.key === 'created_at'">
+          {{ record.created_at ? formatRelativeTime(record.created_at) : '-' }}
+        </span>
+        <span v-else-if="column.key === 'size'">
+          {{ record.size ? formatFileSize(record.size) : '-' }}
+        </span>
+        <!-- 隐藏状态列 -->
+        <!-- <div
           v-else-if="column.key === 'status'"
           style="display: flex; align-items: center; justify-content: flex-end"
         >
@@ -321,7 +306,7 @@
               <span v-else>{{ text }}</span>
             </a-tooltip>
           </template>
-        </div>
+        </div> -->
 
         <div v-else-if="column.key === 'action'" class="table-row-actions">
           <a-popover
@@ -369,8 +354,8 @@
                     {{ record.status === 'error_parsing' ? '重试解析' : '解析文件' }}
                   </a-button>
 
-                  <!-- Index Action -->
-                  <a-button
+                  <!-- 隐藏入库相关按钮 -->
+                  <!-- <a-button
                     v-if="record.status === 'parsed' || record.status === 'error_indexing'"
                     type="text"
                     block
@@ -381,7 +366,6 @@
                     {{ record.status === 'error_indexing' ? '重试入库' : '入库' }}
                   </a-button>
 
-                  <!-- Reindex Action -->
                   <a-button
                     v-if="!isLightRAG && (record.status === 'done' || record.status === 'indexed')"
                     type="text"
@@ -391,7 +375,7 @@
                   >
                     <template #icon><component :is="h(RotateCw)" size="14" /></template>
                     重新入库
-                  </a-button>
+                  </a-button> -->
 
                   <a-button
                     type="text"
@@ -452,6 +436,7 @@ import {
   ChevronDown,
   Link
 } from 'lucide-vue-next'
+import FileUploadModal from '@/components/FileUploadModal.vue'
 
 const store = useDatabaseStore()
 const userStore = useUserStore()
@@ -515,7 +500,7 @@ const selectedRowKeys = computed({
   set: (keys) => (store.selectedRowKeys = keys)
 })
 
-const isSelectionMode = ref(false)
+const isSelectionMode = ref(true) // 默认开启多选状态
 
 const allSelectableFiles = computed(() => {
   const nameFilter = filenameFilter.value.trim().toLowerCase()
@@ -573,6 +558,45 @@ const closePopover = (fileId) => {
 const createFolderModalVisible = ref(false)
 const newFolderName = ref('')
 const createFolderLoading = ref(false)
+
+// 文件上传模态框相关状态
+const addFilesModalVisible = ref(false)
+const isFolderUploadMode = ref(false)
+const addFilesMode = ref('file')
+const currentFolderId = ref(null)
+
+// 构建文件夹树（用于上传时选择目标文件夹）
+const folderTree = computed(() => {
+  const files = store.database.files || {}
+  const fileList = Object.values(files)
+  const nodeMap = new Map()
+  const roots = []
+
+  // 初始化文件夹节点
+  fileList.forEach((file) => {
+    if (file.is_folder) {
+      const item = { ...file, title: file.filename, value: file.file_id, children: [] }
+      nodeMap.set(file.file_id, item)
+    }
+  })
+
+  // 构建层级
+  fileList.forEach((file) => {
+    if (file.is_folder && file.parent_id) {
+      const parent = nodeMap.get(file.parent_id)
+      const child = nodeMap.get(file.file_id)
+      if (parent && child) {
+        parent.children.push(child)
+      }
+    } else if (file.is_folder && !file.parent_id) {
+      if (nodeMap.has(file.file_id)) {
+        roots.push(nodeMap.get(file.file_id))
+      }
+    }
+  })
+
+  return roots
+})
 const currentParentId = ref(null)
 
 const showCreateFolderModal = (parentId = null) => {
@@ -738,9 +762,9 @@ const tablePagination = computed(() => ({
   pageSize: paginationConfig.value.pageSize,
   total: filteredFiles.value.length,
   showSizeChanger: true,
-  showTotal: (total) => `共 ${total} 项`,
+  showTotal: (total, range) => `共 ${total} 项，显示 ${range[0]}-${range[1]} 项`,
   pageSizeOptions: paginationConfig.value.pageSizeOptions,
-  hideOnSinglePage: true
+  hideOnSinglePage: false // 始终显示分页器
 }))
 
 // 处理表格变化（分页、每页条数切换）
@@ -778,29 +802,54 @@ const columnsCompact = [
     sortDirections: ['ascend', 'descend']
   },
   {
-    title: '状态',
-    dataIndex: 'status',
-    key: 'status',
-    width: 60,
-    align: 'right',
+    title: '创建时间',
+    dataIndex: 'created_at',
+    key: 'created_at',
+    width: 120,
+    align: 'left',
     sorter: (a, b) => {
-      const statusOrder = {
-        done: 1,
-        indexed: 1,
-        processing: 2,
-        indexing: 2,
-        parsing: 2,
-        waiting: 3,
-        uploaded: 3,
-        parsed: 3,
-        failed: 4,
-        error_indexing: 4,
-        error_parsing: 4
-      }
-      return (statusOrder[a.status] || 5) - (statusOrder[b.status] || 5)
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0
+      return timeA - timeB
     },
     sortDirections: ['ascend', 'descend']
   },
+  {
+    title: '大小',
+    dataIndex: 'size',
+    key: 'size',
+    width: 100,
+    align: 'right',
+    sorter: (a, b) => {
+      return (a.size || 0) - (b.size || 0)
+    },
+    sortDirections: ['ascend', 'descend']
+  },
+  // 隐藏状态列
+  // {
+  //   title: '状态',
+  //   dataIndex: 'status',
+  //   key: 'status',
+  //   width: 60,
+  //   align: 'right',
+  //   sorter: (a, b) => {
+  //     const statusOrder = {
+  //       done: 1,
+  //       indexed: 1,
+  //       processing: 2,
+  //       indexing: 2,
+  //       parsing: 2,
+  //       waiting: 3,
+  //       uploaded: 3,
+  //       parsed: 3,
+  //       failed: 4,
+  //       error_indexing: 4,
+  //       error_parsing: 4
+  //     }
+  //     return (statusOrder[a.status] || 5) - (statusOrder[b.status] || 5)
+  //   },
+  //   sortDirections: ['ascend', 'descend']
+  // },
   { title: '', key: 'action', dataIndex: 'file_id', width: 40, align: 'center' }
 ]
 
@@ -994,7 +1043,16 @@ const canBatchIndex = computed(() => {
 })
 
 const showAddFilesModal = (options = {}) => {
-  emit('showAddFilesModal', options)
+  const { isFolder = false, mode = 'file' } = options
+  isFolderUploadMode.value = isFolder
+  addFilesMode.value = mode
+  addFilesModalVisible.value = true
+  currentFolderId.value = null // 重置当前文件夹ID
+}
+
+// 文件上传成功回调
+const onFileUploadSuccess = () => {
+  handleRefresh() // 刷新文件列表
 }
 
 const handleRefresh = () => {
@@ -1254,9 +1312,8 @@ const handleIndexConfigCancel = () => {
 }
 
 // 导入工具函数
-import { getFileIcon, getFileIconColor, formatRelativeTime } from '@/utils/file_utils'
+import { getFileIcon, getFileIconColor, formatRelativeTime, formatFileSize } from '@/utils/file_utils'
 import { parseToShanghai } from '@/utils/time'
-import ChunkParamsConfig from '@/components/ChunkParamsConfig.vue'
 </script>
 
 <style scoped>
@@ -1277,7 +1334,18 @@ import ChunkParamsConfig from '@/components/ChunkParamsConfig.vue'
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
-  padding: 8px 8px;
+  padding: 16px 16px 8px 16px; /* 顶部留白 */
+  margin: 0 16px; /* 添加左右外边距 */
+}
+
+.panel-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  
+  .action-searcher {
+    width: 200px;
+  }
 }
 
 .panel-actions {

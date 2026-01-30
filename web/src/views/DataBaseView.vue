@@ -1,11 +1,6 @@
 <template>
   <div class="database-container layout-container">
-    <HeaderComponent title="文档知识库" :loading="dbState.listLoading">
-      <template #actions>
-        <a-button type="primary" @click="state.openNewDatabaseModel = true"> 新建知识库 </a-button>
-      </template>
-    </HeaderComponent>
-
+    <!-- 新建知识库弹窗 -->
     <a-modal
       :open="state.openNewDatabaseModel"
       title="新建知识库"
@@ -34,16 +29,6 @@
           <div class="card-description">{{ typeInfo.description }}</div>
         </div>
       </div>
-
-      <!-- 类型说明 -->
-      <!-- <div class="kb-type-guide" v-if="newDatabase.kb_type">
-        <a-alert
-          :message="getKbTypeDescription(newDatabase.kb_type)"
-          :type="getKbTypeAlertType(newDatabase.kb_type)"
-          show-icon
-          style="margin: 12px 0;"
-        />
-      </div> -->
 
       <h3>知识库名称<span style="color: var(--color-error-500)">*</span></h3>
       <a-input v-model:value="newDatabase.name" placeholder="新建知识库名称" size="large" />
@@ -89,24 +74,6 @@
         :auto-size="{ minRows: 3, maxRows: 10 }"
       />
 
-      <!-- 隐私设置（暂时隐藏）
-      <h3 style="margin-top: 20px">隐私设置</h3>
-      <div class="privacy-config">
-        <a-switch
-          v-model:checked="newDatabase.is_private"
-          checked-children="私有"
-          un-checked-children="公开"
-          size="default"
-        />
-        <span style="margin-left: 12px">设置为私有知识库</span>
-        <a-tooltip
-          title="当前未使用此属性。在部分智能体的设计中，可以根据隐私标志来决定启用什么模型和策略。例如，对于私有知识库，可以选择更严格的数据处理和访问控制策略，以保护敏感信息的安全性和隐私性。"
-        >
-          <InfoCircleOutlined style="margin-left: 8px; color: var(--gray-500); cursor: help" />
-        </a-tooltip>
-      </div>
-      -->
-
       <!-- 共享配置 -->
       <h3>共享设置</h3>
       <ShareConfigForm v-model="shareConfig" :auto-select-user-dept="true" />
@@ -122,110 +89,258 @@
       </template>
     </a-modal>
 
-    <!-- 加载状态 -->
-    <div v-if="dbState.listLoading" class="loading-container">
-      <a-spin size="large" />
-      <p>正在加载知识库...</p>
-    </div>
-
-    <!-- 空状态显示 -->
-    <div v-else-if="!databases || databases.length === 0" class="empty-state">
-      <h3 class="empty-title">暂无知识库</h3>
-      <p class="empty-description">创建您的第一个知识库，开始管理文档和知识</p>
-      <a-button type="primary" size="large" @click="state.openNewDatabaseModel = true">
-        <template #icon>
-          <PlusOutlined />
-        </template>
-        创建知识库
-      </a-button>
-    </div>
-
-    <!-- 数据库列表 -->
-    <div v-else class="databases">
-      <div
-        v-for="database in databases"
-        :key="database.db_id"
-        class="database dbcard"
-        @click="navigateToDatabase(database.db_id)"
-      >
-        <!-- 私有知识库锁定图标 -->
-        <LockOutlined
-          v-if="database.metadata?.is_private"
-          class="private-lock-icon"
-          title="私有知识库"
-        />
-        <div class="top">
-          <div class="icon">
-            <component :is="getKbTypeIcon(database.kb_type || 'lightrag')" />
-          </div>
-          <div class="info">
-            <h3>{{ database.name }}</h3>
-            <p>
-              <span>{{ database.files ? Object.keys(database.files).length : 0 }} 文件</span>
-              <span class="created-time-inline" v-if="database.created_at">
-                {{ formatCreatedTime(database.created_at) }}
+    <!-- 选择知识库弹窗 -->
+    <a-modal
+      v-model:open="state.selectDatabaseModalVisible"
+      title="选择知识库"
+      :footer="null"
+      width="500px"
+      destroyOnClose
+    >
+      <div class="select-database-modal">
+        <div class="selected-files-info">
+          <component :is="getUploadIcon()" class="file-icon" />
+          <div class="file-info">
+            <div class="file-count">
+              您已选择{{ selectedFiles.length }}个{{ uploadType === 'folder' ? '文件夹' : '文件' }}
+            </div>
+            <div class="file-names" v-if="selectedFiles.length <= 3">
+              <span v-for="(file, index) in selectedFiles" :key="index" class="file-name">
+                {{ file.name }}
+                <span v-if="index < selectedFiles.length - 1">、</span>
               </span>
-            </p>
+            </div>
+            <div class="file-names" v-else>
+              <span v-for="(file, index) in selectedFiles.slice(0, 2)" :key="index" class="file-name">
+                {{ file.name }}<span v-if="index < 1">、</span>
+              </span>
+              等{{ selectedFiles.length }}个{{ uploadType === 'folder' ? '文件夹' : '文件' }}
+            </div>
           </div>
         </div>
-        <!-- <a-tooltip :title="database.description || '暂无描述'">
-          <p class="description">{{ database.description || '暂无描述' }}</p>
-        </a-tooltip> -->
-        <p class="description">{{ database.description || '暂无描述' }}</p>
-        <div class="tags">
-          <a-tag color="blue" v-if="database.embed_info?.name">{{
-            database.embed_info.name
-          }}</a-tag>
-          <!-- <a-tag color="green" v-if="database.embed_info?.dimension">{{ database.embed_info.dimension }}</a-tag> -->
-          <a-tag
-            :color="getKbTypeColor(database.kb_type || 'lightrag')"
-            class="kb-type-tag"
-            size="small"
-          >
-            {{ getKbTypeLabel(database.kb_type || 'lightrag') }}
-          </a-tag>
+        <div class="database-select-label">请选择上传的知识库</div>
+        <a-select
+          v-model:value="selectedDatabaseId"
+          placeholder="请选择知识库"
+          size="large"
+          style="width: 100%"
+          :options="databaseOptions"
+        />
+        <div class="modal-actions">
+          <a-button @click="state.selectDatabaseModalVisible = false">取消</a-button>
+          <a-button type="primary" @click="confirmUpload" :loading="uploading">确定</a-button>
         </div>
-        <!-- <button @click="deleteDatabase(database.collection_name)">删除</button> -->
+      </div>
+    </a-modal>
+
+    <!-- 上传进度窗口 -->
+    <div v-if="uploadTasks.length > 0" class="upload-progress-window">
+      <div class="upload-progress-header">
+        <a-tabs v-model:activeKey="uploadTabActiveKey" size="small" style="flex: 1">
+          <a-tab-pane :key="'uploading'" :tab="`上传中(${uploadingCount})`" />
+          <a-tab-pane :key="'completed'" :tab="`已完成(${completedCount})`" />
+        </a-tabs>
+        <div class="header-actions">
+          <a-button type="text" size="small" @click="pauseAllUploads" v-if="uploadingCount > 0">
+            全部暂停
+          </a-button>
+          <a-button type="text" size="small" @click="collapseUploadWindow" class="collapse-btn">
+            收起
+          </a-button>
+        </div>
+      </div>
+      <div class="upload-progress-content">
+        <div
+          v-for="task in filteredUploadTasks"
+          :key="task.id"
+          class="upload-task-item"
+        >
+          <a-checkbox v-model:checked="task.checked" />
+          <div class="file-icon-wrapper">
+            <component :is="getFileIcon(task.fileName)" class="file-icon" />
+          </div>
+          <div class="file-info">
+            <div class="file-name">{{ task.fileName }}</div>
+            <div class="file-size">{{ formatFileSize(task.size) }}</div>
+          </div>
+          <div class="upload-status">
+            <a-progress
+              :percent="task.progress"
+              :status="task.status === 'error' ? 'exception' : 'active'"
+              :stroke-width="4"
+              style="width: 200px"
+            />
+            <span class="status-text">{{ getStatusText(task) }}</span>
+          </div>
+          <a-button
+            type="text"
+            size="small"
+            @click="pauseUpload(task.id)"
+            v-if="task.status === 'uploading'"
+          >
+            <PauseCircleOutlined />
+          </a-button>
+        </div>
       </div>
     </div>
+
+    <!-- 主布局：左右分栏 -->
+    <div class="database-layout">
+      <!-- 左侧：知识库列表 -->
+      <div class="database-sidebar">
+        <div class="sidebar-header">
+          <Folder class="header-icon" />
+          <span class="header-title">知识库</span>
+          <a-button
+            type="text"
+            size="small"
+            class="header-add-btn"
+            @click="state.openNewDatabaseModel = true"
+            title="新建知识库"
+          >
+            <PlusOutlined />
+          </a-button>
+        </div>
+        <div v-if="dbState.listLoading" class="loading-state">
+          <a-spin size="small" />
+          <span>加载中...</span>
+        </div>
+        <div v-else-if="!databases || databases.length === 0" class="empty-state-sidebar">
+          <span>暂无知识库</span>
+        </div>
+        <div v-else class="database-list">
+          <div
+            v-for="database in databases"
+            :key="database.db_id"
+            class="database-item"
+            :class="{ active: selectedDatabaseId === database.db_id }"
+            @click="selectDatabase(database.db_id)"
+          >
+            <span class="database-name">{{ database.name }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：内容区域 -->
+      <div class="database-content">
+        <!-- 未选中知识库：显示操作卡片 -->
+        <div
+          v-if="!selectedDatabaseId"
+          class="content-empty"
+          @drop="handleDrop"
+          @dragover.prevent
+          @dragenter.prevent
+        >
+          <div class="upload-hint">
+            <p class="hint-text">将文件或文件夹拖到这里</p>
+            <p class="hint-or">或者</p>
+          </div>
+          <div class="action-cards">
+            <div class="action-card" @click="state.openNewDatabaseModel = true">
+              <div class="card-icon new-kb-icon">
+                <component :is="getKbTypeIcon('milvus')" />
+              </div>
+              <div class="card-title">新建知识库</div>
+            </div>
+            <div class="action-card" @click="triggerFileUpload">
+              <div class="card-icon upload-file-icon">
+                <FileUp />
+              </div>
+              <div class="card-title">上传文件</div>
+            </div>
+            <div class="action-card" @click="triggerFolderUpload">
+              <div class="card-icon upload-folder-icon">
+                <FolderUp />
+              </div>
+              <div class="card-title">上传文件夹</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 已选中知识库：显示文件列表 -->
+        <div v-else class="content-with-database">
+          <FileTable :database-id="selectedDatabaseId" :right-panel-visible="false" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 隐藏的文件输入 -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      multiple
+      style="display: none"
+      @change="handleFileSelect"
+    />
+    <input
+      ref="folderInputRef"
+      type="file"
+      webkitdirectory
+      multiple
+      style="display: none"
+      @change="handleFolderSelect"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, reactive, watch, computed } from 'vue'
+import { ref, onMounted, reactive, watch, computed, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useConfigStore } from '@/stores/config'
 import { useDatabaseStore } from '@/stores/database'
-import { LockOutlined, InfoCircleOutlined, PlusOutlined } from '@ant-design/icons-vue'
-import { typeApi } from '@/apis/knowledge_api'
-import HeaderComponent from '@/components/HeaderComponent.vue'
+import { useTaskerStore } from '@/stores/tasker'
+import { useUserStore } from '@/stores/user'
+import { message } from 'ant-design-vue'
+import { PauseCircleOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { Folder, FileUp, FolderUp, FileText, File } from 'lucide-vue-next'
+import { typeApi, fileApi } from '@/apis/knowledge_api'
 import ModelSelectorComponent from '@/components/ModelSelectorComponent.vue'
 import EmbeddingModelSelector from '@/components/EmbeddingModelSelector.vue'
 import ShareConfigForm from '@/components/ShareConfigForm.vue'
-import dayjs, { parseToShanghai } from '@/utils/time'
+import FileTable from '@/components/FileTable.vue'
+import { parseToShanghai } from '@/utils/time'
 import AiTextarea from '@/components/AiTextarea.vue'
 import { getKbTypeLabel, getKbTypeIcon, getKbTypeColor } from '@/utils/kb_utils'
+import { getFileIcon } from '@/utils/file_utils'
 
 const route = useRoute()
 const router = useRouter()
 const configStore = useConfigStore()
 const databaseStore = useDatabaseStore()
+const taskerStore = useTaskerStore()
+const userStore = useUserStore()
 
 // 使用 store 的状态
 const { databases, state: dbState } = storeToRefs(databaseStore)
+const { tasks: taskerTasks } = storeToRefs(taskerStore)
 
 const state = reactive({
-  openNewDatabaseModel: false
+  openNewDatabaseModel: false,
+  selectDatabaseModalVisible: false
 })
 
-// 共享配置状态（用于提交数据）
+// 选中的知识库ID
+const selectedDatabaseId = ref(null)
+
+// 上传相关
+const uploadType = ref('file') // 'file' | 'folder'
+const selectedFiles = ref([])
+const uploading = ref(false)
+const fileInputRef = ref(null)
+const folderInputRef = ref(null)
+
+// 上传任务列表
+const uploadTasks = ref([])
+const uploadTabActiveKey = ref('uploading')
+let uploadPollingTimer = null
+
+// 新建知识库相关
 const shareConfig = ref({
   is_shared: true,
   accessible_department_ids: []
 })
 
-// 语言选项（值使用英文，以保证后端/LightRAG 兼容；标签为中英文方便理解）
 const languageOptions = [
   { label: '中文 Chinese', value: 'Chinese' },
   { label: '英语 English', value: 'English' },
@@ -267,19 +382,39 @@ const llmModelSpec = computed(() => {
 
 // 支持的知识库类型
 const supportedKbTypes = ref({})
-
-// 有序的知识库类型
 const orderedKbTypes = computed(() => supportedKbTypes.value)
+
+// 知识库选项（用于下拉选择）
+const databaseOptions = computed(() => {
+  return (databases.value || []).map((db) => ({
+    label: db.name,
+    value: db.db_id
+  }))
+})
+
+// 上传任务相关计算属性
+const uploadingCount = computed(() => {
+  return uploadTasks.value.filter((t) => t.status === 'uploading').length
+})
+
+const completedCount = computed(() => {
+  return uploadTasks.value.filter((t) => ['success', 'error'].includes(t.status)).length
+})
+
+const filteredUploadTasks = computed(() => {
+  if (uploadTabActiveKey.value === 'uploading') {
+    return uploadTasks.value.filter((t) => t.status === 'uploading')
+  }
+  return uploadTasks.value.filter((t) => ['success', 'error'].includes(t.status))
+})
 
 // 加载支持的知识库类型
 const loadSupportedKbTypes = async () => {
   try {
     const data = await typeApi.getKnowledgeBaseTypes()
     supportedKbTypes.value = data.kb_types
-    console.log('支持的知识库类型:', supportedKbTypes.value)
   } catch (error) {
     console.error('加载知识库类型失败:', error)
-    // 如果加载失败，设置默认类型
     supportedKbTypes.value = {
       lightrag: {
         description: '基于图检索的知识库，支持实体关系构建和复杂查询',
@@ -289,11 +424,8 @@ const loadSupportedKbTypes = async () => {
   }
 }
 
-// 重排序模型信息现在直接从 configStore.config.reranker_names 获取，无需单独加载
-
 const resetNewDatabase = () => {
   Object.assign(newDatabase, createEmptyDatabaseForm())
-  // 重置共享配置
   shareConfig.value = {
     is_shared: true,
     accessible_department_ids: []
@@ -305,58 +437,20 @@ const cancelCreateDatabase = () => {
   resetNewDatabase()
 }
 
-// 格式化创建时间
-const formatCreatedTime = (createdAt) => {
-  if (!createdAt) return ''
-  const parsed = parseToShanghai(createdAt)
-  if (!parsed) return ''
-
-  const today = dayjs().startOf('day')
-  const createdDay = parsed.startOf('day')
-  const diffInDays = today.diff(createdDay, 'day')
-
-  if (diffInDays === 0) {
-    return '今天创建'
-  }
-  if (diffInDays === 1) {
-    return '昨天创建'
-  }
-  if (diffInDays < 7) {
-    return `${diffInDays} 天前创建`
-  }
-  if (diffInDays < 30) {
-    const weeks = Math.floor(diffInDays / 7)
-    return `${weeks} 周前创建`
-  }
-  if (diffInDays < 365) {
-    const months = Math.floor(diffInDays / 30)
-    return `${months} 个月前创建`
-  }
-  const years = Math.floor(diffInDays / 365)
-  return `${years} 年前创建`
-}
-
-// 处理知识库类型改变
 const handleKbTypeChange = (type) => {
-  console.log('知识库类型改变:', type)
   resetNewDatabase()
   newDatabase.kb_type = type
 }
 
-// 处理LLM选择
 const handleLLMSelect = (spec) => {
-  console.log('LLM选择:', spec)
   if (typeof spec !== 'string' || !spec) return
-
   const index = spec.indexOf('/')
   const provider = index !== -1 ? spec.slice(0, index) : ''
   const modelName = index !== -1 ? spec.slice(index + 1) : ''
-
   newDatabase.llm_info.provider = provider
   newDatabase.llm_info.model_name = modelName
 }
 
-// 构建请求数据（只负责表单数据转换）
 const buildRequestData = () => {
   const requestData = {
     database_name: newDatabase.name.trim(),
@@ -368,7 +462,6 @@ const buildRequestData = () => {
     }
   }
 
-  // 添加共享配置
   requestData.share_config = {
     is_shared: shareConfig.value.is_shared,
     accessible_departments: shareConfig.value.is_shared
@@ -376,7 +469,6 @@ const buildRequestData = () => {
       : shareConfig.value.accessible_department_ids || []
   }
 
-  // 根据类型添加特定配置
   if (['milvus'].includes(newDatabase.kb_type)) {
     if (newDatabase.storage) {
       requestData.additional_params.storage = newDatabase.storage
@@ -396,7 +488,6 @@ const buildRequestData = () => {
   return requestData
 }
 
-// 创建按钮处理
 const handleCreateDatabase = async () => {
   const requestData = buildRequestData()
   try {
@@ -408,37 +499,766 @@ const handleCreateDatabase = async () => {
   }
 }
 
-const navigateToDatabase = (databaseId) => {
-  router.push({ path: `/database/${databaseId}` })
+// 选择知识库
+const selectDatabase = async (databaseId) => {
+  selectedDatabaseId.value = databaseId
+  // 设置 store 的 databaseId，以便 FileTable 组件使用
+  databaseStore.databaseId = databaseId
+  // 加载知识库信息
+  await databaseStore.getDatabaseInfo(databaseId)
 }
 
-watch(
-  () => route.path,
-  (newPath) => {
-    if (newPath === '/database') {
-      databaseStore.loadDatabases()
+// 触发文件上传
+const triggerFileUpload = () => {
+  uploadType.value = 'file'
+  fileInputRef.value?.click()
+}
+
+// 触发文件夹上传
+const triggerFolderUpload = () => {
+  uploadType.value = 'folder'
+  folderInputRef.value?.click()
+}
+
+// 处理文件选择
+const handleFileSelect = (event) => {
+  const files = Array.from(event.target.files || [])
+  if (files.length === 0) return
+  selectedFiles.value = files
+  state.selectDatabaseModalVisible = true
+  event.target.value = '' // 重置input
+}
+
+// 处理文件夹选择
+const handleFolderSelect = (event) => {
+  const files = Array.from(event.target.files || [])
+  if (files.length === 0) return
+  selectedFiles.value = files
+  state.selectDatabaseModalVisible = true
+  event.target.value = '' // 重置input
+}
+
+// 获取上传图标
+const getUploadIcon = () => {
+  return uploadType.value === 'folder' ? FolderUp : FileUp
+}
+
+// 确认上传
+const confirmUpload = async () => {
+  if (!selectedDatabaseId.value) {
+    message.error('请选择知识库')
+    return
+  }
+
+  if (selectedFiles.value.length === 0) {
+    message.error('请选择文件')
+    return
+  }
+
+  uploading.value = true
+  state.selectDatabaseModalVisible = false
+
+  // 创建上传任务
+  const tasks = selectedFiles.value.map((file) => ({
+    id: `upload_${Date.now()}_${Math.random()}`,
+    fileName: file.name,
+    size: file.size,
+    file: file,
+    progress: 0,
+    status: 'pending',
+    checked: true
+  }))
+
+  uploadTasks.value.push(...tasks)
+  
+  // 显示上传进度窗口
+  state.uploadProgressWindowVisible = true
+
+  // 开始上传（并发上传，不等待完成）
+  tasks.forEach(task => {
+    uploadFile(task, selectedDatabaseId.value).catch(error => {
+      console.error('上传失败:', error)
+      // 错误已在 uploadFile 中处理
+    })
+  })
+
+  selectedFiles.value = []
+  uploading.value = false
+}
+
+// 上传文件（使用 XMLHttpRequest 跟踪进度）
+const uploadFile = async (task, dbId) => {
+  task.status = 'uploading'
+  task.progress = 0
+
+  return new Promise((resolve, reject) => {
+    if (!dbId) {
+      task.status = 'error'
+      task.error = '知识库ID不能为空'
+      reject(new Error('知识库ID不能为空'))
+      return
+    }
+
+    const formData = new FormData()
+    // 处理文件夹上传的文件名
+    if (uploadType.value === 'folder' && task.file.webkitRelativePath) {
+      formData.append('file', task.file, task.file.webkitRelativePath)
+    } else {
+      formData.append('file', task.file)
+    }
+
+    const xhr = new XMLHttpRequest()
+    const url =
+      uploadType.value === 'folder'
+        ? `/api/knowledge/files/upload-folder?db_id=${dbId}`
+        : `/api/knowledge/files/upload?db_id=${dbId}`
+
+    // 先设置进度监听
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        task.progress = Math.round((e.loaded / e.total) * 100)
+      }
+    }
+
+    // 先打开连接
+    xhr.open('POST', url)
+
+    // 获取认证头并设置（必须在 open 之后，send 之前）
+    const userStore = useUserStore()
+    const headers = userStore.getAuthHeaders()
+    for (const [key, value] of Object.entries(headers)) {
+      try {
+        xhr.setRequestHeader(key, value)
+      } catch (e) {
+        console.error('设置请求头失败:', key, e)
+      }
+    }
+    
+    // 存储 xhr 实例以便取消
+    task.xhr = xhr
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const result = JSON.parse(xhr.responseText)
+          // 文件上传完成
+          task.progress = 100
+          task.status = 'success'
+          
+          if (result.task_id) {
+            // 注册任务到任务中心（用于跟踪后续处理进度，如解析、入库等）
+            taskerStore.registerQueuedTask({
+              task_id: result.task_id,
+              name: `处理${task.fileName}`,
+              task_type: 'knowledge_ingest',
+              message: '文件上传完成，正在处理',
+              payload: {
+                db_id: dbId,
+                file_name: task.fileName
+              }
+            })
+            task.taskId = result.task_id
+            // 上传已完成，但后续处理可能需要时间
+            // 保持 status 为 'success'（上传成功），后续处理状态通过轮询更新
+          }
+          resolve(result)
+        } catch (e) {
+          task.status = 'error'
+          task.error = '解析响应失败'
+          reject(e)
+        }
+      } else {
+        try {
+          const error = JSON.parse(xhr.responseText)
+          task.status = 'error'
+          task.error = error.detail || '上传失败'
+          reject(new Error(task.error))
+        } catch (e) {
+          task.status = 'error'
+          task.error = '上传失败'
+          reject(new Error('上传失败'))
+        }
+      }
+    }
+
+    xhr.onerror = () => {
+      task.status = 'error'
+      task.error = '网络错误'
+      reject(new Error('网络错误'))
+    }
+
+    xhr.onabort = () => {
+      task.status = 'cancelled'
+      task.error = '用户取消上传'
+      reject(new Error('用户取消上传'))
+    }
+
+    // 发送请求（xhr.open 已在上面调用过）
+    xhr.send(formData)
+  })
+}
+
+// 轮询上传任务状态（仅用于跟踪后续处理任务，上传进度由XMLHttpRequest直接更新）
+const pollUploadTasks = async () => {
+  if (uploadTasks.value.length === 0) {
+    stopPolling()
+    return
+  }
+
+  // 检查是否还有需要跟踪的任务（有taskId且状态不是最终状态）
+  const tasksToTrack = uploadTasks.value.filter(
+    (t) => t.taskId && !['success', 'error'].includes(t.status)
+  )
+
+  if (tasksToTrack.length === 0) {
+    // 所有任务都已完成，停止轮询
+    stopPolling()
+    return
+  }
+
+  // 从任务中心获取任务状态
+  try {
+    await taskerStore.loadTasks()
+
+    // 更新上传任务状态（仅更新有taskId的任务，且不覆盖已完成的）
+    uploadTasks.value.forEach((uploadTask) => {
+      if (uploadTask.taskId && !['success', 'error'].includes(uploadTask.status)) {
+        const taskerTask = taskerTasks.value.find((t) => t.id === uploadTask.taskId)
+        if (taskerTask) {
+          // 如果任务中心显示已完成，更新状态
+          if (taskerTask.status === 'success') {
+            uploadTask.status = 'success'
+            // 保持上传进度为100，不覆盖
+            if (uploadTask.progress < 100) {
+              uploadTask.progress = 100
+            }
+          } else if (taskerTask.status === 'failed') {
+            uploadTask.status = 'error'
+            uploadTask.error = taskerTask.error || '处理失败'
+          }
+          // 注意：上传进度由XMLHttpRequest的onprogress直接更新，这里不覆盖
+        }
+      }
+    })
+
+    // 再次检查是否全部完成
+    const allCompleted = uploadTasks.value.every(
+      (t) => t.status === 'success' || t.status === 'error'
+    )
+    if (allCompleted) {
+      const successCount = uploadTasks.value.filter((t) => t.status === 'success').length
+      message.success(`上传成功 共${successCount}项`)
+      stopPolling()
+    }
+  } catch (error) {
+    console.error('轮询任务状态失败:', error)
+  }
+}
+
+const startPolling = () => {
+  if (uploadPollingTimer) return
+  // 延迟启动轮询，给上传一些时间
+  uploadPollingTimer = setInterval(pollUploadTasks, 5000) // 改为5秒轮询一次，减少请求频率
+}
+
+const stopPolling = () => {
+  if (uploadPollingTimer) {
+    clearInterval(uploadPollingTimer)
+    uploadPollingTimer = null
+  }
+}
+
+// 暂停上传
+const pauseUpload = (taskId) => {
+  const task = uploadTasks.value.find((t) => t.id === taskId)
+  if (task && task.taskId) {
+    taskerStore.cancelTask(task.taskId)
+  }
+}
+
+// 全部暂停
+const pauseAllUploads = () => {
+  uploadTasks.value.forEach((task) => {
+    if (task.status === 'uploading' && task.taskId) {
+      pauseUpload(task.id)
+    }
+  })
+}
+
+// 收起上传窗口
+const collapseUploadWindow = () => {
+  uploadTasks.value = []
+  stopPolling()
+}
+
+// 获取状态文本
+const getStatusText = (task) => {
+  if (task.status === 'uploading') {
+    return task.progress < 100 ? `${task.progress}%` : '上传中'
+  }
+  if (task.status === 'success') {
+    return '已完成'
+  }
+  if (task.status === 'error') {
+    return '失败'
+  }
+  return '等待中'
+}
+
+// 处理拖拽上传
+const handleDrop = (event) => {
+  event.preventDefault()
+  const items = event.dataTransfer.items
+  if (!items || items.length === 0) return
+
+  const files = []
+  const folders = []
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item.kind === 'file') {
+      const entry = item.webkitGetAsEntry()
+      if (entry) {
+        if (entry.isDirectory) {
+          folders.push(entry)
+        } else {
+          files.push(item.getAsFile())
+        }
+      }
     }
   }
+
+  if (files.length > 0) {
+    uploadType.value = 'file'
+    selectedFiles.value = files
+    state.selectDatabaseModalVisible = true
+  } else if (folders.length > 0) {
+    // 文件夹拖拽需要特殊处理，这里简化处理
+    message.info('文件夹拖拽上传功能开发中，请使用"上传文件夹"按钮')
+  }
+}
+
+// 格式化文件大小
+const formatFileSize = (bytes) => {
+  if (!bytes) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
+}
+
+// 监听上传任务，只在有需要跟踪的任务时启动轮询
+watch(
+  () => uploadTasks.value,
+  (tasks) => {
+    // 检查是否有需要跟踪的任务（有taskId且状态不是最终状态）
+    const hasTasksToTrack = tasks.some(
+      (t) => t.taskId && !['success', 'error'].includes(t.status)
+    )
+    
+    if (hasTasksToTrack && !uploadPollingTimer) {
+      // 延迟启动，给上传一些时间
+      setTimeout(() => {
+        startPolling()
+      }, 2000)
+    } else if (!hasTasksToTrack && uploadPollingTimer) {
+      // 没有需要跟踪的任务，停止轮询
+      stopPolling()
+    }
+  },
+  { deep: true }
 )
+
+// 移除路由监听，因为不再使用路由跳转，直接通过点击选择知识库
+// watch(
+//   () => route.path,
+//   (newPath) => {
+//     if (newPath === '/database') {
+//       selectedDatabaseId.value = null
+//       databaseStore.loadDatabases()
+//     } else if (newPath.startsWith('/database/')) {
+//       const dbId = newPath.split('/database/')[1]
+//       if (dbId && !dbId.includes('?')) {
+//         // 确保是有效的数据库ID（不包含查询参数）
+//         selectedDatabaseId.value = dbId
+//       }
+//     }
+//   },
+//   { immediate: true }
+// )
 
 onMounted(() => {
   loadSupportedKbTypes()
   databaseStore.loadDatabases()
 })
+
+onBeforeUnmount(() => {
+  stopPolling()
+})
 </script>
 
 <style lang="less" scoped>
-.new-database-modal {
-  .kb-type-guide {
-    margin: 12px 0;
-  }
+.database-container {
+  height: calc(100vh - 76px); /* 视口高度减去上下边距 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: 16px; /* 添加上下左右边距 */
+  margin-top: 60px;
+  background: #ffffff; /* 白色背景 */
+  border-radius: 8px; /* 圆角 */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); /* 阴影效果 */
+  padding: 16px; /* 内边距 */
+  box-sizing: border-box; /* 确保 padding 和 margin 包含在高度内 */
+}
 
-  .privacy-config {
+.database-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+// 左侧知识库列表
+.database-sidebar {
+  width: 240px;
+  border-right: 1px solid var(--gray-100);
+  background: var(--gray-0);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  .sidebar-header {
+    padding: 16px;
+    border-bottom: 1px solid var(--gray-100);
     display: flex;
     align-items: center;
-    margin-bottom: 12px;
+    justify-content: space-between;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--gray-900);
+
+    .header-title {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-add-btn {
+      flex-shrink: 0;
+    }
+
+    .header-icon {
+      width: 20px;
+      height: 20px;
+      color: var(--main-color);
+    }
   }
 
+  .loading-state,
+  .empty-state-sidebar {
+    padding: 20px;
+    text-align: center;
+    color: var(--gray-500);
+  }
+
+  .database-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+
+  .database-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 4px;
+
+    &:hover {
+      background: var(--gray-50);
+    }
+
+    &.active {
+      background: var(--main-10);
+      color: var(--main-color);
+
+      .database-icon {
+        color: var(--main-color);
+      }
+    }
+    
+
+    .database-icon {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    .database-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+    }
+  }
+}
+
+// 右侧内容区域
+.database-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+
+  .content-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+
+    .upload-hint {
+      text-align: center;
+      margin-bottom: 40px;
+
+      .hint-text {
+        font-size: 18px;
+        color: var(--gray-700);
+        margin: 0 0 12px 0;
+      }
+
+      .hint-or {
+        font-size: 14px;
+        color: var(--gray-500);
+        margin: 0;
+      }
+    }
+
+    .action-cards {
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+      flex-wrap: wrap;
+
+      .action-card {
+        width: 200px;
+        height: 160px;
+        border: 2px dashed var(--gray-200);
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        cursor: pointer;
+        transition: all 0.3s;
+        background: var(--gray-0);
+
+        &:hover {
+          border-color: var(--main-color);
+          background: var(--main-5);
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px var(--shadow-1);
+        }
+
+        .card-icon {
+          width: 48px;
+          height: 48px;
+          color: var(--main-color);
+        }
+
+        .card-title {
+          font-size: 16px;
+          font-weight: 500;
+          color: var(--gray-800);
+        }
+      }
+    }
+  }
+
+  .content-with-database {
+    flex: 1;
+    overflow: hidden;
+  }
+}
+
+// 选择知识库弹窗
+.select-database-modal {
+  .selected-files-info {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    background: var(--gray-50);
+    border-radius: 8px;
+    margin-bottom: 20px;
+
+    .file-icon {
+      width: 24px;
+      height: 24px;
+      color: var(--main-color);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .file-info {
+      flex: 1;
+
+      .file-count {
+        font-weight: 500;
+        color: var(--gray-900);
+        margin-bottom: 4px;
+      }
+
+      .file-names {
+        font-size: 13px;
+        color: var(--gray-600);
+
+        .file-name {
+          max-width: 200px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          display: inline-block;
+        }
+      }
+    }
+  }
+
+  .database-select-label {
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: var(--gray-700);
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+  }
+}
+
+// 上传进度窗口
+.upload-progress-window {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  width: 600px;
+  max-height: 600px;
+  background: var(--gray-0);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px var(--shadow-2);
+  border: 1px solid var(--gray-200);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+
+  .upload-progress-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--gray-100);
+
+    :deep(.ant-tabs) {
+      flex: 1;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+  }
+
+  .upload-progress-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    max-height: 500px;
+  }
+
+  .upload-task-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    background: var(--gray-50);
+    transition: all 0.2s;
+
+    &:hover {
+      background: var(--gray-100);
+    }
+
+    .file-icon-wrapper {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+
+      .file-icon {
+        width: 24px;
+        height: 24px;
+        color: var(--main-color);
+      }
+    }
+
+    .file-info {
+      flex: 1;
+      min-width: 0;
+
+      .file-name {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--gray-900);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .file-size {
+        font-size: 12px;
+        color: var(--gray-500);
+        margin-top: 2px;
+      }
+    }
+
+    .upload-status {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+
+      :deep(.ant-progress) {
+        flex: 1;
+        min-width: 150px;
+      }
+
+      .status-text {
+        font-size: 12px;
+        color: var(--gray-600);
+        min-width: 60px;
+        text-align: right;
+      }
+    }
+  }
+}
+
+// 新建知识库弹窗样式（保留原有样式）
+.new-database-modal {
   .kb-type-cards {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -457,8 +1277,6 @@ onMounted(() => {
       cursor: pointer;
       transition: all 0.3s ease;
       background: var(--gray-0);
-      position: relative;
-      overflow: hidden;
 
       &:hover {
         border-color: var(--main-color);
@@ -496,264 +1314,20 @@ onMounted(() => {
         font-size: 13px;
         color: var(--gray-600);
         line-height: 1.5;
-        margin-bottom: 0;
-        // min-height: 40px;
-      }
-
-      .deprecated-badge {
-        background: var(--color-error-100);
-        color: var(--color-error-600);
-        font-size: 10px;
-        font-weight: 600;
-        padding: 2px 6px;
-        border-radius: 4px;
-        margin-left: auto;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        cursor: help;
-        transition: all 0.2s ease;
-
-        &:hover {
-          background: var(--color-error-200);
-          color: var(--color-error-700);
-        }
       }
     }
   }
 
-  .chunk-config {
-    margin-top: 16px;
-    padding: 12px 16px;
-    background-color: var(--gray-25);
-    border-radius: 6px;
-    border: 1px solid var(--gray-150);
-
-    h3 {
-      margin-top: 0;
-      margin-bottom: 12px;
-      color: var(--gray-800);
-    }
-
-    .chunk-params {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-
-      .param-row {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-
-        label {
-          min-width: 80px;
-          font-weight: 500;
-          color: var(--gray-700);
-        }
-
-        .param-hint {
-          font-size: 12px;
-          color: var(--gray-500);
-          margin-left: 8px;
-        }
-      }
-    }
-  }
-}
-
-.database-container {
-  .databases {
-    .database {
-      .top {
-        .info {
-          h3 {
-            display: block;
-          }
-        }
-      }
-    }
-  }
-}
-.database-actions,
-.document-actions {
-  margin-bottom: 20px;
-}
-.databases {
-  padding: 20px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
-}
-
-.database,
-.graphbase {
-  background: linear-gradient(145deg, var(--gray-0) 0%, var(--gray-10) 100%);
-  box-shadow: 0px 1px 2px 0px var(--shadow-2);
-  border: 1px solid var(--gray-100);
-  transition: none;
-  position: relative;
-}
-
-.dbcard,
-.database {
-  width: 100%;
-  padding: 16px;
-  border-radius: 16px;
-  height: 156px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  position: relative; // 为绝对定位的锁定图标提供参考
-  overflow: hidden;
-
-  .private-lock-icon {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    color: var(--gray-600);
-    background: linear-gradient(135deg, var(--gray-0) 0%, var(--gray-100) 100%);
-    font-size: 12px;
-    border-radius: 8px;
-    padding: 6px;
-    z-index: 2;
-    box-shadow: 0px 2px 4px var(--shadow-2);
-    border: 1px solid var(--gray-100);
-  }
-
-  .top {
-    display: flex;
-    align-items: center;
-    height: 54px;
-    margin-bottom: 14px;
-
-    .icon {
-      width: 54px;
-      height: 54px;
-      font-size: 26px;
-      margin-right: 14px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: var(--main-30);
-      border-radius: 12px;
-      border: 1px solid var(--gray-150);
-      color: var(--main-color);
-      position: relative;
-    }
-
-    .info {
-      flex: 1;
-      min-width: 0;
-
-      h3,
-      p {
-        margin: 0;
-        color: var(--gray-10000);
-      }
-
-      h3 {
-        font-size: 17px;
-        font-weight: 600;
-        letter-spacing: -0.02em;
-        line-height: 1.4;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      p {
-        color: var(--gray-700);
-        font-size: 13px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-top: 4px;
-        font-weight: 400;
-
-        .created-time-inline {
-          color: var(--gray-700);
-          font-size: 11px;
-          font-weight: 400;
-          background: var(--gray-50);
-          padding: 2px 6px;
-          border-radius: 4px;
-        }
-      }
-    }
-  }
-
-  .description {
-    color: var(--gray-600);
-    overflow: hidden;
-    display: -webkit-box;
-    line-clamp: 1;
-    -webkit-line-clamp: 1;
-    -webkit-box-orient: vertical;
-    text-overflow: ellipsis;
-    margin-bottom: 12px;
-    font-size: 13px;
-    font-weight: 400;
-    flex: 1;
-  }
-}
-
-.database-empty {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100%;
-  flex-direction: column;
-  color: var(--gray-900);
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 100px 20px;
-  text-align: center;
-
-  .empty-title {
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--gray-900);
-    margin: 0 0 12px 0;
-    letter-spacing: -0.02em;
-  }
-
-  .empty-description {
-    font-size: 14px;
-    color: var(--gray-600);
-    margin: 0 0 32px 0;
-    line-height: 1.5;
-    max-width: 320px;
-  }
-
-  .ant-btn {
-    height: 44px;
-    padding: 0 24px;
-    font-size: 15px;
-    font-weight: 500;
-  }
-}
-
-.database-container {
-  padding: 0;
-}
-
-.loading-container {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  height: 300px;
-  gap: 16px;
-}
-
-.new-database-modal {
   h3 {
-    margin-top: 10px;
+    margin-top: 20px;
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--gray-800);
+
+    &:first-child {
+      margin-top: 0;
+    }
   }
 }
 </style>

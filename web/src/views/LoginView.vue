@@ -19,15 +19,12 @@
       <div class="navbar-content">
         <div class="brand-container">
           <h1 class="brand-text">
-            <span v-if="brandOrgName" class="brand-org">{{ brandOrgName }}</span>
-            <span v-if="brandOrgName && brandName !== brandOrgName" class="brand-separator"></span>
-            <span class="brand-main">{{ brandName }}</span>
+            <img src="/favicon.png" alt="Logo" class="brand-logo" />
+            <span class="brand-org">合规管控</span>
+            <!-- <span v-if="brandOrgName" class="brand-org">{{ brandOrgName }}</span> -->
+            <!-- <span v-if="brandOrgName && brandName !== bran
+              -->
           </h1>
-        </div>
-        <div class="login-top-action">
-          <a-button type="text" size="small" class="back-home-btn" @click="goHome">
-            返回首页
-          </a-button>
         </div>
       </div>
     </nav>
@@ -159,10 +156,7 @@
 
                   <a-form-item>
                     <div class="login-options">
-                      <a-checkbox v-model:checked="rememberMe" @click="showDevMessage"
-                        >记住我</a-checkbox
-                      >
-                      <a class="forgot-password" @click="showDevMessage">忘记密码?</a>
+                      <a-checkbox v-model:checked="rememberMe">记住我</a-checkbox>
                     </div>
                   </a-form-item>
 
@@ -180,29 +174,6 @@
                     </a-button>
                   </a-form-item>
 
-                  <!-- 第三方登录选项 -->
-                  <div class="third-party-login">
-                    <div class="divider">
-                      <span>其他登录方式</span>
-                    </div>
-                    <div class="login-icons">
-                      <a-tooltip title="微信登录">
-                        <a-button shape="circle" class="login-icon" @click="showDevMessage">
-                          <template #icon><wechat-outlined /></template>
-                        </a-button>
-                      </a-tooltip>
-                      <a-tooltip title="企业微信登录">
-                        <a-button shape="circle" class="login-icon" @click="showDevMessage">
-                          <template #icon><qrcode-outlined /></template>
-                        </a-button>
-                      </a-tooltip>
-                      <a-tooltip title="飞书登录">
-                        <a-button shape="circle" class="login-icon" @click="showDevMessage">
-                          <template #icon><thunderbolt-outlined /></template>
-                        </a-button>
-                      </a-tooltip>
-                    </div>
-                  </div>
                 </a-form>
               </div>
 
@@ -218,17 +189,9 @@
 
     <!-- 页面底部：版权信息等 -->
     <footer class="page-footer">
-      <div class="footer-links">
-        <a href="https://github.com/xerrors" target="_blank">联系我们</a>
-        <span class="divider">|</span>
-        <a href="https://github.com/xerrors/Yuxi-Know" target="_blank">使用帮助</a>
-        <span class="divider">|</span>
-        <a href="https://github.com/xerrors/Yuxi-Know/blob/main/LICENSE" target="_blank"
-          >隐私政策</a
-        >
-      </div>
       <div class="copyright">
-        &copy; {{ new Date().getFullYear() }} {{ brandName }}. All Rights Reserved.
+        <!-- &copy; {{ new Date().getFullYear() }} {{ brandName }}. All Rights Reserved. -->
+        &copy; {{ new Date().getFullYear() }} HeGuiGuanKong. All Rights Reserved.
       </div>
     </footer>
   </div>
@@ -245,9 +208,6 @@ import { healthApi } from '@/apis/system_api'
 import {
   UserOutlined,
   LockOutlined,
-  WechatOutlined,
-  QrcodeOutlined,
-  ThunderboltOutlined,
   ExclamationCircleOutlined
 } from '@ant-design/icons-vue'
 const router = useRouter()
@@ -311,13 +271,25 @@ const adminForm = reactive({
   phone_number: '' // 手机号字段（可选）
 })
 
-// 开发中功能提示
-const showDevMessage = () => {
-  message.info('该功能正在开发中，敬请期待！')
+// 记住我功能：保存和加载登录账号
+const REMEMBER_ME_KEY = 'remembered_login_id'
+
+// 加载记住的登录账号
+const loadRememberedLoginId = () => {
+  const remembered = localStorage.getItem(REMEMBER_ME_KEY)
+  if (remembered) {
+    loginForm.loginId = remembered
+    rememberMe.value = true
+  }
 }
 
-const goHome = () => {
-  router.push('/')
+// 保存或清除记住的登录账号
+const saveRememberedLoginId = () => {
+  if (rememberMe.value) {
+    localStorage.setItem(REMEMBER_ME_KEY, loginForm.loginId)
+  } else {
+    localStorage.removeItem(REMEMBER_ME_KEY)
+  }
 }
 
 // 清理倒计时器
@@ -391,6 +363,9 @@ const handleLogin = async () => {
       password: loginForm.password
     })
 
+    // 处理记住我功能
+    saveRememberedLoginId()
+
     message.success('登录成功')
 
     // 获取重定向路径
@@ -399,37 +374,8 @@ const handleLogin = async () => {
 
     // 根据用户角色决定重定向目标
     if (redirectPath === '/') {
-      // 如果是管理员，直接跳转到/chat页面
-      if (userStore.isAdmin) {
-        router.push('/agent')
-        return
-      }
-
-      // 普通用户跳转到默认智能体
-      try {
-        // 初始化agentStore并获取智能体信息
-        await agentStore.initialize()
-
-        // 尝试获取默认智能体
-        if (agentStore.defaultAgentId) {
-          // 如果存在默认智能体，直接跳转
-          router.push(`/agent/${agentStore.defaultAgentId}`)
-          return
-        }
-
-        // 没有默认智能体，获取第一个可用智能体
-        const agentIds = Object.keys(agentStore.agents)
-        if (agentIds.length > 0) {
-          router.push(`/agent/${agentIds[0]}`)
-          return
-        }
-
-        // 没有可用智能体，回退到首页
-        router.push('/')
-      } catch (error) {
-        console.error('获取智能体信息失败:', error)
-        router.push('/')
-      }
+      // 默认跳转到知识库页面
+      router.push('/database')
     } else {
       // 跳转到其他预设的路径
       router.push(redirectPath)
@@ -533,11 +479,14 @@ const checkServerHealth = async () => {
 
 // 组件挂载时
 onMounted(async () => {
-  // 如果已登录，跳转到首页
+  // 如果已登录，跳转到知识库
   if (userStore.isLoggedIn) {
-    router.push('/')
+    router.push('/database')
     return
   }
+
+  // 加载记住的登录账号
+  loadRememberedLoginId()
 
   // 首先检查服务器健康状态
   await checkServerHealth()
@@ -595,6 +544,13 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+
+  .brand-logo {
+    width: 74px;
+    height: 74px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
 
   .brand-org {
     color: var(--gray-700);

@@ -1,8 +1,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed, provide } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { GithubOutlined } from '@ant-design/icons-vue'
-import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck } from 'lucide-vue-next'
+import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck, Folder } from 'lucide-vue-next'
 
 import { useConfigStore } from '@/stores/config'
 import { useDatabaseStore } from '@/stores/database'
@@ -25,9 +24,7 @@ const layoutSettings = reactive({
   useTopBar: false // 是否使用顶栏
 })
 
-// Add state for GitHub stars
-const githubStars = ref(0)
-const isLoadingStars = ref(false)
+// GitHub stars removed
 
 // Add state for debug modal
 const showDebugModal = ref(false)
@@ -53,20 +50,7 @@ const getRemoteDatabase = () => {
   databaseStore.loadDatabases()
 }
 
-// Fetch GitHub stars count
-const fetchGithubStars = async () => {
-  try {
-    isLoadingStars.value = true
-    // 公共API，可以直接使用fetch
-    const response = await fetch('https://api.github.com/repos/xerrors/Yuxi-Know')
-    const data = await response.json()
-    githubStars.value = data.stargazers_count
-  } catch (error) {
-    console.error('获取GitHub stars失败:', error)
-  } finally {
-    isLoadingStars.value = false
-  }
-}
+// GitHub stars fetch removed
 
 onMounted(async () => {
   // 加载信息配置
@@ -74,9 +58,8 @@ onMounted(async () => {
   // 加载其他配置
   getRemoteConfig()
   getRemoteDatabase()
-  fetchGithubStars() // Fetch GitHub stars on mount
-  // 预加载任务数据，确保任务中心打开时有内容
-  taskerStore.loadTasks()
+  // 任务中心暂时注释，预加载任务数据也注释
+  // taskerStore.loadTasks()
 })
 
 // 打印当前页面的路由信息，使用 vue3 的 setup composition API
@@ -85,32 +68,33 @@ console.log(route)
 
 const activeTaskCount = computed(() => activeCountRef.value || 0)
 
-// 下面是导航菜单部分，添加智能体项
+// 下面是导航菜单部分，只保留知识库
 const mainList = [
-  {
-    name: '智能体',
-    path: '/agent',
-    icon: Bot,
-    activeIcon: Bot
-  },
-  {
-    name: '图谱',
-    path: '/graph',
-    icon: Waypoints,
-    activeIcon: Waypoints
-  },
   {
     name: '知识库',
     path: '/database',
-    icon: LibraryBig,
-    activeIcon: LibraryBig
-  },
-  {
-    name: 'Dashboard',
-    path: '/dashboard',
-    icon: BarChart3,
-    activeIcon: BarChart3
+    icon: Folder,
+    activeIcon: Folder
   }
+  // 其他菜单暂时注释
+  // {
+  //   name: '智能体',
+  //   path: '/agent',
+  //   icon: Bot,
+  //   activeIcon: Bot
+  // },
+  // {
+  //   name: '图谱',
+  //   path: '/graph',
+  //   icon: Waypoints,
+  //   activeIcon: Waypoints
+  // },
+  // {
+  //   name: 'Dashboard',
+  //   path: '/dashboard',
+  //   icon: BarChart3,
+  //   activeIcon: BarChart3
+  // }
 ]
 
 // Provide settings modal methods to child components
@@ -123,9 +107,7 @@ provide('settingsModal', {
   <div class="app-layout" :class="{ 'use-top-bar': layoutSettings.useTopBar }">
     <div class="header" :class="{ 'top-bar': layoutSettings.useTopBar }">
       <div class="logo circle">
-        <router-link to="/">
-          <img :src="infoStore.organization.avatar" />
-        </router-link>
+        <img :src="infoStore.organization.avatar" />
       </div>
       <div class="nav">
         <!-- 使用mainList渲染导航项 -->
@@ -137,16 +119,17 @@ provide('settingsModal', {
           class="nav-item"
           active-class="active"
         >
-          <a-tooltip placement="right">
-            <template #title>{{ item.name }}</template>
+          <div class="nav-item-content">
             <component
               class="icon"
               :is="route.path.startsWith(item.path) ? item.activeIcon : item.icon"
               size="22"
             />
-          </a-tooltip>
+            <span class="nav-item-text">{{ item.name }}</span>
+          </div>
         </RouterLink>
-        <div
+        <!-- 任务中心菜单暂时注释 -->
+        <!-- <div
           class="nav-item task-center"
           :class="{ active: isDrawerOpen }"
           @click="taskerStore.openDrawer()"
@@ -162,20 +145,9 @@ provide('settingsModal', {
               <CircleCheck class="icon" size="22" />
             </a-badge>
           </a-tooltip>
-        </div>
+        </div> -->
       </div>
       <div class="fill"></div>
-      <div class="github nav-item">
-        <a-tooltip placement="right">
-          <template #title>欢迎 Star</template>
-          <a href="https://github.com/xerrors/Yuxi-Know" target="_blank" class="github-link">
-            <GithubOutlined class="icon" />
-            <span v-if="githubStars > 0" class="github-stars">
-              <span class="star-count">{{ (githubStars / 1000).toFixed(1) }}k</span>
-            </span>
-          </a>
-        </a-tooltip>
-      </div>
       <!-- 用户信息组件 -->
       <div class="nav-item user-info">
         <UserInfoComponent />
@@ -201,14 +173,15 @@ provide('settingsModal', {
     >
       <DebugComponent />
     </a-modal>
-    <TaskCenterDrawer />
+    <!-- 任务中心抽屉暂时注释 -->
+    <!-- <TaskCenterDrawer /> -->
     <SettingsModal v-model:visible="showSettingsModal" @close="() => (showSettingsModal = false)" />
   </div>
 </template>
 
 <style lang="less" scoped>
 // Less 变量定义
-@header-width: 50px;
+@header-width: 200px;
 
 .app-layout {
   display: flex;
@@ -220,7 +193,7 @@ provide('settingsModal', {
 
 div.header,
 #app-router-view {
-  height: 100%;
+  // height: 100%;
   max-width: 100%;
   user-select: none;
 }
@@ -230,25 +203,28 @@ div.header,
   overflow-y: auto;
 }
 
-.header {
-  display: flex;
-  flex-direction: column;
-  flex: 0 0 @header-width;
-  justify-content: flex-start;
-  align-items: center;
-  background-color: var(--main-0);
-  height: 100%;
-  width: @header-width;
-  border-right: 1px solid var(--gray-100);
+  .header {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 @header-width;
+    justify-content: flex-start;
+    align-items: center;
+    background-color: #F2F3F5; /* 浅灰色背景 */
+    height: 100%;
+    width: @header-width;
+    border-right: 1px solid var(--gray-200);
+    padding: 0 4px;
 
   .nav {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    align-items: center;
+    align-items: flex-start;
     position: relative;
     // height: 45px;
     gap: 16px;
+    width: 100%;
+    padding: 0 8px;
   }
 
   .fill {
@@ -277,22 +253,42 @@ div.header,
   .nav-item {
     display: flex;
     align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    padding: 4px;
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 0;
     border: 1px solid transparent;
-    border-radius: 12px;
+    border-radius: 8px;
     background-color: transparent;
-    color: var(--gray-1000);
+    color: #333333; /* 淡灰色背景下的图标颜色 */
     font-size: 20px;
     transition:
       background-color 0.2s ease-in-out,
       color 0.2s ease-in-out;
-    margin: 0;
+    margin: 0 4px;
     text-decoration: none;
     cursor: pointer;
     outline: none;
+
+    .nav-item-content {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+      width: 100%;
+      padding: 0 8px;
+    }
+
+    .nav-item-text {
+      font-size: 13px;
+      color: #333333; /* 淡灰色背景下的深色文字 */
+      line-height: 1.2;
+      text-align: left;
+      white-space: nowrap;
+      transition: color 0.2s ease-in-out;
+      font-weight: 500;
+    }
 
     & > svg:focus {
       outline: none;
@@ -302,9 +298,14 @@ div.header,
     }
 
     &.active {
-      background-color: var(--gray-100);
+      background-color: rgba(0, 0, 0, 0.05); /* 淡灰色背景下的激活状态 */
       font-weight: bold;
       color: var(--main-color);
+
+      .nav-item-text {
+        color: var(--main-color);
+        font-weight: 500;
+      }
     }
 
     &.warning {
@@ -312,7 +313,12 @@ div.header,
     }
 
     &:hover {
+      background-color: rgba(0, 0, 0, 0.03); /* 淡灰色背景下的悬停效果 */
       color: var(--main-color);
+
+      .nav-item-text {
+        color: var(--main-color);
+      }
     }
 
     &.github {
@@ -380,6 +386,9 @@ div.header,
     }
     &.user-info {
       margin-bottom: 8px;
+      width: 100%;
+      justify-content: flex-start;
+      padding: 8px;
     }
   }
 }
@@ -437,6 +446,7 @@ div.header,
       font-size: 15px; // 减小图标大小
       border: none;
       outline: none;
+      color: #333333; /* 淡灰色背景下的图标颜色 */
 
       &:focus,
       &:active {

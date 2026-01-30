@@ -207,7 +207,7 @@ const goToChat = async () => {
   if (!userStore.isLoggedIn) {
     // 登录后应该跳转到默认智能体而不是/agent
     sessionStorage.setItem('redirect', '/') // 设置为首页，登录后会通过路由守卫处理重定向
-    router.push('/login')
+    router.push('/')
     return
   }
 
