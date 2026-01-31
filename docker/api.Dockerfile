@@ -27,10 +27,12 @@ RUN set -ex \
     # (C) 安装必要的系统库
     && apt-get update \
     && apt-get install -y --no-install-recommends --fix-missing \
-        curl \
-        ffmpeg \
-        libsm6 \
-        libxext6 \
+    curl \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    libreoffice-writer \
+    libreoffice-core \
     # (D) 清理垃圾，减小体积
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
