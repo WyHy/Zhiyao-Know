@@ -287,3 +287,22 @@ async def add_neo4j_entities(
     except Exception as e:
         logger.error(f"添加实体失败: {e}, {traceback.format_exc()}")
         return {"success": False, "message": f"添加实体失败: {e}", "status": "failed"}
+
+
+@graph.post("/neo4j/clear")
+async def clear_neo4j_graph(
+    data: dict = Body(default={}), current_user: User = Depends(get_admin_user)
+):
+    """清空Neo4j图数据库的所有节点和关系"""
+    try:
+        if not graph_base.is_running():
+            raise HTTPException(status_code=503, detail="图数据库未启动")
+
+        kgdb_name = data.get("kgdb_name", "neo4j")
+        graph_base.delete_entity(entity_name=None, kgdb_name=kgdb_name)
+        graph_base.save_graph_info(kgdb_name)
+
+        return {"success": True, "message": "图谱已成功清空", "status": "success"}
+    except Exception as e:
+        logger.error(f"清空图谱失败: {e}, {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"清空图谱失败: {str(e)}")

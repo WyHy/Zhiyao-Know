@@ -265,11 +265,11 @@ class BaseNeo4jAdapter:
                 WITH s, s_degree, collect(DISTINCT neighbor) as neighbors
                 WITH s, s_degree, neighbors[0..toInteger($num * 0.15)] as limited_neighbors
 
-                // 从邻居节点扩展到二跳节点
+                // 从邻居节点扩展到二跳节点（包括叶子节点）
                 UNWIND limited_neighbors as neighbor
                 OPTIONAL MATCH (neighbor)-[*1..1]-(second_hop{label_clause})
                 WHERE second_hop <> s
-                WITH s, limited_neighbors, neighbor, collect(DISTINCT second_hop)[0..5] as second_hops
+                WITH s, limited_neighbors, neighbor, collect(DISTINCT second_hop)[0..10] as second_hops
 
                 // 收集所有连通节点
                 WITH collect(DISTINCT s) as seeds,
@@ -283,20 +283,20 @@ class BaseNeo4jAdapter:
                 // 获取这些节点之间的关系，避免双向边
                 UNWIND final_nodes as n
                 OPTIONAL MATCH (n)-[rel]-(m)
-                WHERE m IN final_nodes AND elementId(n) < elementId(m)
+                WHERE m IN final_nodes AND n.id < m.id
                 RETURN
-                    {{id: elementId(n), name: n.name, properties: properties(n)}} AS h,
+                    {{id: n.id, element_id: elementId(n), name: n.name, properties: properties(n)}} AS h,
                     CASE WHEN rel IS NOT NULL THEN
                         {{
                             id: elementId(rel),
                             type: rel.type,
-                            source_id: elementId(startNode(rel)),
-                            target_id: elementId(endNode(rel)),
+                            source_id: startNode(rel).id,
+                            target_id: endNode(rel).id,
                             properties: properties(rel)
                         }}
                     ELSE null END AS r,
                     CASE WHEN m IS NOT NULL THEN
-                        {{id: elementId(m), name: m.name, properties: properties(m)}}
+                        {{id: m.id, element_id: elementId(m), name: m.name, properties: properties(m)}}
                     ELSE null END AS t
             """
 
@@ -322,20 +322,102 @@ class BaseNeo4jAdapter:
                         if r_edge:
                             formatted_results["edges"].append(r_edge)
 
-                # 如果节点数不足，补充更多节点
+                # 如果节点数不足，补充更多有连接的节点及其邻居
                 if len(formatted_results["nodes"]) < num:
                     remaining_count = num - len(formatted_results["nodes"])
-                    supplement_query = f"""
-                    MATCH (n{label_clause})
-                    WHERE NOT elementId(n) IN $existing_ids
-                    RETURN {{id: elementId(n), name: n.name, properties: properties(n)}} AS node
+                    
+                    # 获取补充节点及其邻居，构建小的连通子图
+                    get_supplement_subgraph_query = f"""
+                    MATCH (n{label_clause})-[r]-(m{label_clause})
+                    WHERE NOT n.id IN $existing_ids
+                    WITH n, COUNT(DISTINCT r) as degree
+                    WHERE degree > 0
+                    ORDER BY degree DESC
                     LIMIT $count
+                    
+                    // 为每个补充节点获取部分邻居
+                    MATCH (n)-[rel]-(neighbor{label_clause})
+                    WITH n, rel, neighbor
+                    LIMIT $total_limit
+                    
+                    RETURN 
+                        {{id: n.id, element_id: elementId(n), name: n.name, properties: properties(n)}} AS h,
+                        CASE WHEN rel IS NOT NULL THEN
+                            {{
+                                id: elementId(rel),
+                                type: rel.type,
+                                source_id: startNode(rel).id,
+                                target_id: endNode(rel).id,
+                                properties: properties(rel)
+                            }}
+                        ELSE null END AS r,
+                        CASE WHEN neighbor IS NOT NULL THEN
+                            {{id: neighbor.id, element_id: elementId(neighbor), name: neighbor.name, properties: properties(neighbor)}}
+                        ELSE null END AS t
                     """
-                    supplement_results = tx.run(supplement_query, existing_ids=list(node_ids), count=remaining_count)
-                    for item in supplement_results:
-                        node = self._process_record_props(item["node"])
-                        if node:
-                            formatted_results["nodes"].append(node)
+                    
+                    # 限制总记录数，避免返回过多数据
+                    total_limit = remaining_count * 5  # 每个补充节点最多5个邻居
+                    
+                    supplement_results = tx.run(
+                        get_supplement_subgraph_query, 
+                        existing_ids=list(node_ids), 
+                        count=remaining_count,
+                        total_limit=total_limit
+                    )
+                    
+                    added_count = 0
+                    for record in supplement_results:
+                        # 添加补充节点
+                        h_node = self._process_record_props(record["h"])
+                        if h_node and h_node["id"] not in node_ids:
+                            if added_count < remaining_count:  # 控制补充节点数量
+                                formatted_results["nodes"].append(h_node)
+                                node_ids.add(h_node["id"])
+                                added_count += 1
+                        
+                        # 添加邻居节点和边
+                        if record["r"] is not None and record["t"] is not None:
+                            t_node = self._process_record_props(record["t"])
+                            r_edge = self._process_record_props(record["r"])
+                            
+                            if t_node and t_node["id"] not in node_ids:
+                                if len(formatted_results["nodes"]) < num:  # 不超过总数限制
+                                    formatted_results["nodes"].append(t_node)
+                                    node_ids.add(t_node["id"])
+                            
+                            if r_edge:
+                                # 避免重复添加边
+                                edge_key = f"{r_edge.get('source_id')}_{r_edge.get('type')}_{r_edge.get('target_id')}"
+                                existing_keys = {
+                                    f"{e.get('source_id')}_{e.get('type')}_{e.get('target_id')}"
+                                    for e in formatted_results["edges"]
+                                }
+                                if edge_key not in existing_keys:
+                                    formatted_results["edges"].append(r_edge)
+
+                # 过滤掉悬空边（源节点或目标节点不在节点列表中的边）
+                valid_edges = []
+                for edge in formatted_results["edges"]:
+                    source_id = edge.get("source_id")
+                    target_id = edge.get("target_id")
+                    if source_id in node_ids and target_id in node_ids:
+                        valid_edges.append(edge)
+                
+                formatted_results["edges"] = valid_edges
+
+                # 删除孤立节点（没有任何边连接的节点）
+                connected_node_ids = set()
+                for edge in valid_edges:
+                    connected_node_ids.add(edge.get("source_id"))
+                    connected_node_ids.add(edge.get("target_id"))
+                
+                valid_nodes = [
+                    node for node in formatted_results["nodes"]
+                    if node.get("id") in connected_node_ids
+                ]
+                
+                formatted_results["nodes"] = valid_nodes
 
                 return formatted_results
 

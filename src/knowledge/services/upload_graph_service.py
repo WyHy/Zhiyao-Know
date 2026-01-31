@@ -156,12 +156,40 @@ class UploadGraphService:
             return False
 
         def _parse_node(node_data):
-            """解析节点数据，返回 (name, props)"""
+            """
+            智能解析节点数据，支持多种格式：
+            1. 简单字符串: "节点名"
+            2. 路径字符串: "父节点/子节点/节点名"
+            3. 字典格式: {"name": "节点名", "id": "唯一标识", ...}
+            
+            返回: (node_id, name, props)
+            """
             if isinstance(node_data, dict):
+                # 字典格式：提取 id、name 和其他属性
                 props = node_data.copy()
-                name = props.pop("name", "")
-                return name, props
-            return str(node_data), {}
+                node_id = props.pop("id", None) or props.pop("path", None) or props.pop("name", "")
+                name = props.pop("name", node_id)
+                return node_id, name, props
+                
+            elif isinstance(node_data, str):
+                # 字符串格式：检查是否是路径
+                if "/" in node_data:
+                    # 路径格式: "父/子/节点"
+                    parts = node_data.split("/")
+                    node_id = node_data  # 完整路径作为唯一 ID
+                    name = parts[-1]  # 最后一段作为显示名称
+                    props = {
+                        "path": node_data,  # 保存完整路径
+                        "level": len(parts),  # 层级深度
+                    }
+                    return node_id, name, props
+                else:
+                    # 简单字符串: "节点名"
+                    return node_data, node_data, {}
+            
+            # 兜底：转为字符串
+            node_str = str(node_data)
+            return node_str, node_str, {}
 
         def _parse_relation(rel_data):
             """解析关系数据，返回 (type, props)"""
@@ -172,26 +200,29 @@ class UploadGraphService:
             return str(rel_data), {}
 
         def _create_graph(tx, data):
-            """添加一个三元组"""
+            """添加三元组，支持路径和 ID 模式"""
             for entry in data:
-                h_name, h_props = _parse_node(entry.get("h"))
-                t_name, t_props = _parse_node(entry.get("t"))
+                h_id, h_name, h_props = _parse_node(entry.get("h"))
+                t_id, t_name, t_props = _parse_node(entry.get("t"))
                 r_type, r_props = _parse_relation(entry.get("r"))
 
-                if not h_name or not t_name or not r_type:
+                if not h_id or not t_id or not r_type:
                     continue
 
+                # 使用 id 作为唯一标识，name 用于显示
                 tx.run(
                     """
-                MERGE (h:Entity:Upload {name: $h_name})
-                SET h += $h_props
-                MERGE (t:Entity:Upload {name: $t_name})
-                SET t += $t_props
+                MERGE (h:Entity:Upload {id: $h_id})
+                SET h.name = $h_name, h += $h_props
+                MERGE (t:Entity:Upload {id: $t_id})
+                SET t.name = $t_name, t += $t_props
                 MERGE (h)-[r:RELATION {type: $r_type}]->(t)
                 SET r += $r_props
                 """,
+                    h_id=h_id,
                     h_name=h_name,
                     h_props=h_props,
+                    t_id=t_id,
                     t_name=t_name,
                     t_props=t_props,
                     r_type=r_type,
@@ -213,7 +244,7 @@ class UploadGraphService:
                 """)
 
         def _get_nodes_without_embedding(tx, entity_names):
-            """获取没有embedding的节点列表"""
+            """获取没有embedding的节点列表（基于 id 查询）"""
             # 构建参数字典，将列表转换为"param0"、"param1"等键值对形式
             params = {f"param{i}": name for i, name in enumerate(entity_names)}
 
@@ -223,27 +254,28 @@ class UploadGraphService:
             # 构建查询参数列表
             param_placeholders = ", ".join([f"${key}" for key in params.keys()])
 
-            # 执行查询
+            # 执行查询（改为使用 id 字段）
             result = tx.run(
                 f"""
             MATCH (n:Entity)
-            WHERE n.name IN [{param_placeholders}] AND n.embedding IS NULL
-            RETURN n.name AS name
+            WHERE n.id IN [{param_placeholders}] AND n.embedding IS NULL
+            RETURN n.id AS id, n.name AS name
             """,
                 params,
             )
 
-            return [record["name"] for record in result]
+            return [{"id": record["id"], "name": record["name"]} for record in result]
 
         def _batch_set_embeddings(tx, entity_embedding_pairs):
-            """批量设置实体的嵌入向量"""
-            for entity_name, embedding in entity_embedding_pairs:
+            """批量设置实体的嵌入向量（使用 id 匹配）"""
+            for entity_info, embedding in entity_embedding_pairs:
+                entity_id = entity_info if isinstance(entity_info, str) else entity_info.get("id")
                 tx.run(
                     """
-                MATCH (e:Entity {name: $name})
+                MATCH (e:Entity {id: $id})
                 CALL db.create.setNodeVectorProperty(e, 'embedding', $embedding)
                 """,
-                    name=entity_name,
+                    id=entity_id,
                     embedding=embedding,
                 )
 
@@ -271,15 +303,15 @@ class UploadGraphService:
             logger.info(f"Creating vector index for {kgdb_name} with {config.embed_model}")
             session.execute_write(_create_vector_index, getattr(cur_embed_info, "dimension", 1024))
 
-            # 收集所有需要处理的实体名称，去重
+            # 收集所有需要处理的实体名称，去重（使用 id）
             all_entities = set()
             for entry in triples:
-                h_name, _ = _parse_node(entry.get("h"))
-                t_name, _ = _parse_node(entry.get("t"))
-                if h_name:
-                    all_entities.add(h_name)
-                if t_name:
-                    all_entities.add(t_name)
+                h_id, h_name, _ = _parse_node(entry.get("h"))
+                t_id, t_name, _ = _parse_node(entry.get("t"))
+                if h_id:
+                    all_entities.add(h_id)
+                if t_id:
+                    all_entities.add(t_id)
 
             all_entities_list = list(all_entities)
 
@@ -291,7 +323,7 @@ class UploadGraphService:
 
             logger.info(f"需要为{len(nodes_without_embedding)}/{len(all_entities_list)}个实体计算embedding")
 
-            # 批量处理实体
+            # 批量处理实体（使用 name 计算 embedding）
             max_batch_size = 1024  # 限制此部分的主要是内存大小 1024 * 1024 * 4 / 1024 / 1024 = 4GB
             total_entities = len(nodes_without_embedding)
 
@@ -302,10 +334,13 @@ class UploadGraphService:
                     f"{(total_entities - 1) // max_batch_size + 1} ({len(batch_entities)} entities)"
                 )
 
-                # 批量获取嵌入向量
-                batch_embeddings = await self.aget_embedding(batch_entities, batch_size=batch_size)
+                # 批量获取嵌入向量（使用 name 计算）
+                batch_names = [
+                    e["name"] if isinstance(e, dict) else e for e in batch_entities
+                ]
+                batch_embeddings = await self.aget_embedding(batch_names, batch_size=batch_size)
 
-                # 将实体名称和嵌入向量配对
+                # 将实体信息和嵌入向量配对
                 entity_embedding_pairs = list(zip(batch_entities, batch_embeddings))
 
                 # 批量写入数据库
@@ -569,6 +604,12 @@ class UploadGraphService:
                 all_query_results["triples"].extend(query_result["triples"])
             else:
                 raise ValueError(f"Invalid return_format: {return_format}")
+        
+        # 对于路径模式的数据，额外包含所有直接子节点（文件和子文件夹）
+        # 这样搜索"发展部"时，会直接显示其下的所有子项
+        if return_format == "graph" and qualified_entities:
+            self._add_child_nodes_for_path_entities(all_query_results, qualified_entities, kgdb_name)
+        
 
         # 基础去重
         if return_format == "graph":
@@ -600,6 +641,90 @@ class UploadGraphService:
             all_query_results["triples"] = dedup_triples
 
         return all_query_results
+
+    def _add_child_nodes_for_path_entities(self, results, entity_names, kgdb_name="neo4j"):
+        """
+        为路径实体添加其所有直接子节点
+        
+        当搜索"发展部"时，会找到所有 id 以 "文件汇总/发展部/" 开头的节点
+        这样可以确保显示该文件夹下的所有文件和子文件夹
+        """
+        def _process_record_props(record):
+            """处理记录中的属性：扁平化 properties 并移除 embedding"""
+            if record is None:
+                return None
+            data = dict(record)
+            props = data.pop("properties", {}) or {}
+            if "embedding" in props:
+                del props["embedding"]
+            return {**props, **data}
+        
+        def query_children(tx, entity_names):
+            """查询所有匹配实体的所有后代节点（不要求边连接）"""
+            # 首先找到这些实体的 ID（路径）
+            find_ids_query = """
+            MATCH (n:Upload)
+            WHERE n.name IN $names
+            RETURN n.id AS parent_id, n.name AS name
+            """
+            parent_results = tx.run(find_ids_query, names=entity_names)
+            parent_paths = []
+            for record in parent_results:
+                parent_id = record["parent_id"]
+                if parent_id:  # 确保有路径信息
+                    parent_paths.append(parent_id)
+            
+            if not parent_paths:
+                return []
+            
+            # 直接查询所有路径前缀匹配的子节点，不要求边连接
+            # 限制层级差避免返回过深的节点
+            children_query = """
+            UNWIND $parent_paths AS parent_path
+            MATCH (child:Upload)
+            WHERE child.id STARTS WITH parent_path + '/'
+                  AND size(split(child.id, '/')) - size(split(parent_path, '/')) <= 3
+                  AND size(split(child.id, '/')) - size(split(parent_path, '/')) >= 1
+            WITH parent_path, child
+            LIMIT 150
+            
+            // 为每个子节点找到其直接父节点的边
+            MATCH (parent:Upload {id: parent_path})
+            OPTIONAL MATCH (child)-[r:RELATION]->(related)
+            WHERE related.id = parent_path OR related.id STARTS WITH parent_path + '/'
+            
+            RETURN DISTINCT
+                {id: child.id, element_id: elementId(child), name: child.name, properties: properties(child)} AS child_node,
+                CASE WHEN r IS NOT NULL THEN
+                    {
+                        id: elementId(r),
+                        type: r.type,
+                        source_id: child.id,
+                        target_id: related.id,
+                        properties: properties(r)
+                    }
+                ELSE null END AS edge
+            """
+            
+            return list(tx.run(children_query, parent_paths=parent_paths))
+        
+        try:
+            with self.driver.session() as session:
+                child_records = session.execute_read(query_children, entity_names)
+                
+                for record in child_records:
+                    child_node = _process_record_props(record["child_node"])
+                    edge = _process_record_props(record["edge"])
+                    
+                    if child_node:
+                        results["nodes"].append(child_node)
+                    if edge:
+                        results["edges"].append(edge)
+                
+                logger.debug(f"为 {len(entity_names)} 个实体添加了 {len(child_records)} 个子节点")
+                
+        except Exception as e:
+            logger.warning(f"添加子节点失败: {e}")
 
     def _query_with_fuzzy_match(self, keyword, kgdb_name="neo4j"):
         """模糊查询"""
@@ -689,48 +814,48 @@ class UploadGraphService:
                 WITH [
                     // 1跳出边
                     [(n:Upload {name: $entity_name})-[r1]->(m1) |
-                     {h: {id: elementId(n), name: n.name, properties: properties(n)},
+                     {h: {id: n.id, element_id: elementId(n), name: n.name, properties: properties(n)},
                       r: {
                         id: elementId(r1),
                         type: r1.type,
-                        source_id: elementId(n),
-                        target_id: elementId(m1),
+                        source_id: n.id,
+                        target_id: m1.id,
                         properties: properties(r1)
                       },
-                      t: {id: elementId(m1), name: m1.name, properties: properties(m1)}}],
+                      t: {id: m1.id, element_id: elementId(m1), name: m1.name, properties: properties(m1)}}],
                     // 2跳出边
                     [(n:Upload {name: $entity_name})-[r1]->(m1)-[r2]->(m2) |
-                     {h: {id: elementId(m1), name: m1.name, properties: properties(m1)},
+                     {h: {id: m1.id, element_id: elementId(m1), name: m1.name, properties: properties(m1)},
                       r: {
                         id: elementId(r2),
                         type: r2.type,
-                        source_id: elementId(m1),
-                        target_id: elementId(m2),
+                        source_id: m1.id,
+                        target_id: m2.id,
                         properties: properties(r2)
                       },
-                      t: {id: elementId(m2), name: m2.name, properties: properties(m2)}}],
+                      t: {id: m2.id, element_id: elementId(m2), name: m2.name, properties: properties(m2)}}],
                     // 1跳入边
                     [(m1)-[r1]->(n:Upload {name: $entity_name}) |
-                     {h: {id: elementId(m1), name: m1.name, properties: properties(m1)},
+                     {h: {id: m1.id, element_id: elementId(m1), name: m1.name, properties: properties(m1)},
                       r: {
                         id: elementId(r1),
                         type: r1.type,
-                        source_id: elementId(m1),
-                        target_id: elementId(n),
+                        source_id: m1.id,
+                        target_id: n.id,
                         properties: properties(r1)
                       },
-                      t: {id: elementId(n), name: n.name, properties: properties(n)}}],
+                      t: {id: n.id, element_id: elementId(n), name: n.name, properties: properties(n)}}],
                     // 2跳入边
                     [(m2)-[r2]->(m1)-[r1]->(n:Upload {name: $entity_name}) |
-                     {h: {id: elementId(m2), name: m2.name, properties: properties(m2)},
+                     {h: {id: m2.id, element_id: elementId(m2), name: m2.name, properties: properties(m2)},
                       r: {
                         id: elementId(r2),
                         type: r2.type,
-                        source_id: elementId(m2),
-                        target_id: elementId(m1),
+                        source_id: m2.id,
+                        target_id: m1.id,
                         properties: properties(r2)
                       },
-                      t: {id: elementId(m1), name: m1.name, properties: properties(m1)}}]
+                      t: {id: m1.id, element_id: elementId(m1), name: m1.name, properties: properties(m1)}}]
                 ] AS all_results
                 UNWIND all_results AS result_list
                 UNWIND result_list AS item
