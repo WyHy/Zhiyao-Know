@@ -5,9 +5,16 @@
 1. 所有表已创建
 2. 必要的默认值约束已添加
 3. 必要的初始数据已插入
+
+运行：docker compose exec api python scripts/init_database.py
 """
 
 import asyncio
+import sys
+from pathlib import Path
+
+# 添加项目根目录到 Python 路径
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import text
 
