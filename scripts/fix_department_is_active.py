@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import text
 
-from src.storage.db.manager import PostgresManager
+from src.storage.postgres.manager import PostgresManager
 
 
 async def fix_department_is_active():
