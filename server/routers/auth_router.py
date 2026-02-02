@@ -506,7 +506,16 @@ async def read_user(user_id: int, current_user: User = Depends(get_admin_user), 
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在",
         )
-    return user.to_dict()
+    
+    # 获取用户信息字典
+    user_dict = user.to_dict()
+    
+    # 查询并添加部门名称
+    if user.department_id:
+        dept_result = await db.execute(select(Department.name).filter(Department.id == user.department_id))
+        user_dict["department_name"] = dept_result.scalar_one_or_none()
+    
+    return user_dict
 
 
 async def check_department_admin_count(db: AsyncSession, department_id: int, exclude_user_id: int) -> int:
