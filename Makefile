@@ -21,6 +21,10 @@ start:
 	fi
 	docker compose up -d
 
+init-db:
+	@echo "Initializing database..."
+	docker compose exec api python scripts/init_database.py
+
 stop:
 	docker compose down
 
