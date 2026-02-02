@@ -24,25 +24,42 @@ Base = declarative_base()
 
 
 class Department(Base):
-    """部门模型"""
+    """部门模型（树形结构）"""
 
     __tablename__ = "departments"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(50), nullable=False, unique=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    parent_id = Column(Integer, ForeignKey("departments.id"), nullable=True, index=True)
+    level = Column(Integer, nullable=False, default=1, index=True)
+    path = Column(String(500), nullable=True, index=True)  # 如 "1/5/12"
+    sort_order = Column(Integer, nullable=False, default=0)
     description = Column(String(255), nullable=True)
+    is_active = Column(Integer, nullable=False, default=1)  # 1=启用，0=禁用
     created_at = Column(DateTime, default=utc_now_naive)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
     # 关联关系
-    users = relationship("User", back_populates="department", cascade="all, delete-orphan")
+    parent = relationship("Department", remote_side=[id], backref="children")
+    user_relations = relationship("UserDepartmentRelation", back_populates="department", cascade="all, delete-orphan")
+    kb_relations = relationship("KBDepartmentRelation", back_populates="department", cascade="all, delete-orphan")
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
+    def to_dict(self, include_children=False) -> dict[str, Any]:
+        result = {
             "id": self.id,
             "name": self.name,
+            "parent_id": self.parent_id,
+            "level": self.level,
+            "path": self.path,
+            "sort_order": self.sort_order,
             "description": self.description,
+            "is_active": bool(self.is_active),
             "created_at": format_utc_datetime(self.created_at),
+            "updated_at": format_utc_datetime(self.updated_at),
         }
+        if include_children:
+            result["children"] = [child.to_dict(include_children=True) for child in self.children]
+        return result
 
 
 class User(Base):
@@ -73,8 +90,11 @@ class User(Base):
     # 关联操作日志
     operation_logs = relationship("OperationLog", back_populates="user", cascade="all, delete-orphan")
 
-    # 关联部门
-    department = relationship("Department", back_populates="users")
+    # 关联部门（多对多）
+    department_relations = relationship("UserDepartmentRelation", back_populates="user", cascade="all, delete-orphan")
+    
+    # 访问控制关系（指定 foreign_keys 避免歧义）
+    kb_access_controls = relationship("KBAccessControl", back_populates="user", foreign_keys="[KBAccessControl.user_id]", cascade="all, delete-orphan")
 
     def to_dict(self, include_password: bool = False) -> dict[str, Any]:
         result = {
@@ -109,6 +129,29 @@ class User(Base):
             return 0
         remaining = int((self.login_locked_until - utc_now_naive()).total_seconds())
         return max(0, remaining)
+
+    def calculate_lock_duration(self) -> int:
+        """根据失败次数计算锁定时长（秒）"""
+        if self.login_failed_count < 10:
+            return 0
+
+        # 从第10次失败开始，等待时间从1秒开始，每次翻倍
+        wait_seconds = 2 ** (self.login_failed_count - 10)
+
+        # 最大锁定时间：365天
+        max_seconds = 365 * 24 * 60 * 60
+        return min(wait_seconds, max_seconds)
+
+    def increment_failed_login(self):
+        """增加登录失败次数并设置锁定时间"""
+        import datetime as dt
+        
+        self.login_failed_count += 1
+        self.last_failed_login = utc_now_naive()
+
+        lock_duration = self.calculate_lock_duration()
+        if lock_duration > 0:
+            self.login_locked_until = utc_now_naive() + dt.timedelta(seconds=lock_duration)
 
     def reset_failed_login(self):
         """重置登录失败相关字段"""
@@ -499,3 +542,131 @@ class TaskRecord(Base):
         data.pop("payload", None)
         data.pop("result", None)
         return data
+
+
+class UserDepartmentRelation(Base):
+    """用户-部门关联表（多对多）"""
+
+    __tablename__ = "user_department_relations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=False, index=True)
+    is_primary = Column(Integer, nullable=False, default=0)  # 是否为主部门：1=是，0=否
+    created_at = Column(DateTime, default=utc_now_naive)
+
+    # 关联关系
+    user = relationship("User", back_populates="department_relations")
+    department = relationship("Department", back_populates="user_relations")
+
+    __table_args__ = (UniqueConstraint("user_id", "department_id", name="uq_user_department"),)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "department_id": self.department_id,
+            "is_primary": bool(self.is_primary),
+            "created_at": format_utc_datetime(self.created_at),
+        }
+
+
+class KBDepartmentRelation(Base):
+    """知识库-部门关联表（多对多）"""
+
+    __tablename__ = "kb_department_relations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kb_id = Column(String(100), nullable=False, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, default=utc_now_naive)
+
+    # 关联关系
+    department = relationship("Department", back_populates="kb_relations")
+
+    __table_args__ = (UniqueConstraint("kb_id", "department_id", name="uq_kb_department"),)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "kb_id": self.kb_id,
+            "department_id": self.department_id,
+            "created_at": format_utc_datetime(self.created_at),
+        }
+
+
+class KBAccessControl(Base):
+    """知识库访问控制表（黑名单机制）"""
+
+    __tablename__ = "kb_access_control"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kb_id = Column(String(100), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    access_type = Column(String(20), nullable=False, default="deny")  # deny=禁止访问
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utc_now_naive)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # 操作人
+
+    # 关联关系
+    user = relationship("User", back_populates="kb_access_controls", foreign_keys=[user_id])
+    operator = relationship("User", foreign_keys=[created_by])
+
+    __table_args__ = (UniqueConstraint("kb_id", "user_id", name="uq_kb_user_access"),)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "kb_id": self.kb_id,
+            "user_id": self.user_id,
+            "access_type": self.access_type,
+            "reason": self.reason,
+            "created_at": format_utc_datetime(self.created_at),
+            "created_by": self.created_by,
+        }
+
+
+class KBFile(Base):
+    """知识库文件表（用于文件检索）"""
+
+    __tablename__ = "kb_files"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    file_id = Column(String(100), unique=True, nullable=False, index=True)
+    kb_id = Column(String(100), nullable=False, index=True)
+    filename = Column(String(500), nullable=False, index=True)
+    file_path = Column(Text, nullable=True)
+    file_size = Column(Integer, nullable=True)
+    file_type = Column(String(50), nullable=True)
+    status = Column(String(20), nullable=False, default="uploaded", index=True)
+    
+    # 检索字段
+    title = Column(Text, nullable=True)
+    summary = Column(Text, nullable=True)
+    tags = Column(JSON, nullable=True, default=list)
+    
+    created_at = Column(DateTime, default=utc_now_naive, index=True)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # 关联关系
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "file_id": self.file_id,
+            "kb_id": self.kb_id,
+            "filename": self.filename,
+            "file_path": self.file_path,
+            "file_size": self.file_size,
+            "file_type": self.file_type,
+            "status": self.status,
+            "title": self.title,
+            "summary": self.summary,
+            "tags": self.tags or [],
+            "created_at": format_utc_datetime(self.created_at),
+            "updated_at": format_utc_datetime(self.updated_at),
+            "created_by": self.created_by,
+        }
+

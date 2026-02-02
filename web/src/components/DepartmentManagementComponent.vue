@@ -30,7 +30,20 @@
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'name'">
                 <div class="department-name">
+                  <!-- 层级缩进 -->
+                  <span
+                    v-for="i in record.displayLevel"
+                    :key="'indent-' + i"
+                    class="level-indent"
+                  ></span>
+                  <!-- 层级指示器 -->
+                  <span v-if="record.displayLevel > 0" class="level-indicator">└─</span>
+                  <!-- 部门名称 -->
                   <span class="name-text">{{ record.name }}</span>
+                  <!-- 层级标签 -->
+                  <a-tag v-if="record.level" :color="getLevelColor(record.level)" size="small" class="level-tag">
+                    L{{ record.level }}
+                  </a-tag>
                 </div>
               </template>
               <template v-if="column.key === 'description'">
@@ -57,7 +70,7 @@
                       size="small"
                       danger
                       @click="confirmDeleteDepartment(record)"
-                      :disabled="record.user_count > 0"
+                      :disabled="record.user_count > 0 || record.hasChildren"
                       class="action-btn"
                     >
                       <DeleteOutlined />
@@ -87,6 +100,19 @@
       class="department-modal"
     >
       <a-form layout="vertical" class="department-form">
+        <a-form-item label="上级部门" class="form-item">
+          <a-tree-select
+            v-model:value="departmentManagement.form.parent_id"
+            :tree-data="departmentTreeData"
+            placeholder="请选择上级部门（可选，不选则为顶级部门）"
+            allow-clear
+            :field-names="{ label: 'name', value: 'id', children: 'children' }"
+            tree-default-expand-all
+            size="large"
+          />
+          <div class="help-text">不选择则创建为顶级部门</div>
+        </a-form-item>
+
         <a-form-item label="部门名称" required class="form-item">
           <a-input
             v-model:value="departmentManagement.form.name"
@@ -106,71 +132,27 @@
           />
         </a-form-item>
 
-        <a-divider v-if="!departmentManagement.editMode" />
-
-        <template v-if="!departmentManagement.editMode">
-          <div class="admin-section-title">
-            <TeamOutlined />
-            <span>部门管理员</span>
-          </div>
-          <p class="admin-section-hint">
-            创建部门时必须同时创建管理员，该管理员将负责管理本部门用户
-          </p>
-
-          <a-form-item label="管理员用户ID" required class="form-item">
-            <a-input
-              v-model:value="departmentManagement.form.adminUserId"
-              placeholder="请输入管理员用户ID（3-20位字母/数字/下划线）"
-              size="large"
-              :maxlength="20"
-              @blur="checkAdminUserId"
-            />
-            <div v-if="departmentManagement.form.userIdError" class="error-text">
-              {{ departmentManagement.form.userIdError }}
-            </div>
-            <div v-else class="help-text">此ID将用于登录</div>
-          </a-form-item>
-
-          <a-form-item label="密码" required class="form-item">
-            <a-input-password
-              v-model:value="departmentManagement.form.adminPassword"
-              placeholder="请输入管理员密码"
-              size="large"
-              :maxlength="50"
-            />
-          </a-form-item>
-
-          <a-form-item label="确认密码" required class="form-item">
-            <a-input-password
-              v-model:value="departmentManagement.form.adminConfirmPassword"
-              placeholder="请再次输入密码"
-              size="large"
-              :maxlength="50"
-            />
-          </a-form-item>
-
-          <a-form-item label="手机号（可选）" class="form-item">
-            <a-input
-              v-model:value="departmentManagement.form.adminPhone"
-              placeholder="请输入手机号（可用于登录）"
-              size="large"
-              :maxlength="11"
-            />
-            <div v-if="departmentManagement.form.phoneError" class="error-text">
-              {{ departmentManagement.form.phoneError }}
-            </div>
-          </a-form-item>
-        </template>
+        <a-form-item label="排序顺序" class="form-item">
+          <a-input-number
+            v-model:value="departmentManagement.form.sort_order"
+            placeholder="数字越小越靠前"
+            :min="0"
+            :max="9999"
+            size="large"
+            style="width: 100%"
+          />
+          <div class="help-text">同级部门按此值排序，数字越小越靠前</div>
+        </a-form-item>
       </a-form>
     </a-modal>
   </div>
 </template>
 
 <script setup>
-import { reactive, onMounted, watch } from 'vue'
+import { reactive, onMounted, computed } from 'vue'
 import { notification, Modal } from 'ant-design-vue'
-import { departmentApi, apiSuperAdminGet } from '@/apis'
-import { DeleteOutlined, EditOutlined, PlusOutlined, TeamOutlined } from '@ant-design/icons-vue'
+import { departmentApi } from '@/apis'
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
 
 // 表格列定义
 const columns = [
@@ -205,6 +187,7 @@ const columns = [
 const departmentManagement = reactive({
   loading: false,
   departments: [],
+  departmentTree: [], // 存储原始树形数据
   error: null,
   modalVisible: false,
   modalTitle: '添加部门',
@@ -212,23 +195,85 @@ const departmentManagement = reactive({
   editDepartmentId: null,
   form: {
     name: '',
+    parent_id: null,
     description: '',
-    adminUserId: '',
-    adminPassword: '',
-    adminConfirmPassword: '',
-    adminPhone: '',
-    userIdError: '',
-    phoneError: ''
+    sort_order: 0
   }
 })
+
+// 计算属性：用于树形选择器的数据
+const departmentTreeData = computed(() => {
+  // 如果是编辑模式，需要过滤掉当前部门及其子部门（避免循环引用）
+  if (departmentManagement.editMode && departmentManagement.editDepartmentId) {
+    return filterDepartmentTree(
+      departmentManagement.departmentTree,
+      departmentManagement.editDepartmentId
+    )
+  }
+  return departmentManagement.departmentTree
+})
+
+// 过滤部门树，排除指定部门及其子部门
+const filterDepartmentTree = (tree, excludeId) => {
+  return tree
+    .filter((node) => node.id !== excludeId)
+    .map((node) => ({
+      ...node,
+      children: node.children ? filterDepartmentTree(node.children, excludeId) : []
+    }))
+}
+
+// 根据层级获取颜色
+const getLevelColor = (level) => {
+  const colors = {
+    1: 'blue',
+    2: 'green',
+    3: 'orange',
+    4: 'purple',
+    5: 'red'
+  }
+  return colors[level] || 'default'
+}
+
+// 将树形结构扁平化为列表
+const flattenDepartmentTree = (tree, level = 0) => {
+  const result = []
+  
+  tree.forEach((node) => {
+    // 添加当前节点，带层级信息
+    result.push({
+      ...node,
+      displayLevel: level,
+      hasChildren: node.children && node.children.length > 0
+    })
+    
+    // 递归处理子节点
+    if (node.children && node.children.length > 0) {
+      const childNodes = flattenDepartmentTree(node.children, level + 1)
+      result.push(...childNodes)
+    }
+  })
+  
+  return result
+}
 
 // 获取部门列表
 const fetchDepartments = async () => {
   try {
     departmentManagement.loading = true
     departmentManagement.error = null
-    const departments = await departmentApi.getDepartments()
-    departmentManagement.departments = departments
+    const response = await departmentApi.getDepartments()
+    
+    // 后端返回格式: { success: true, data: [...] }
+    const treeData = response.data || response
+    
+    // 保存原始树形数据（用于父部门选择器）
+    departmentManagement.departmentTree = treeData
+    
+    // 将树形结构扁平化（用于表格显示）
+    const flatDepartments = flattenDepartmentTree(treeData)
+    
+    departmentManagement.departments = flatDepartments
   } catch (error) {
     console.error('获取部门列表失败:', error)
     departmentManagement.error = '获取部门列表失败'
@@ -244,13 +289,9 @@ const showAddDepartmentModal = () => {
   departmentManagement.editDepartmentId = null
   departmentManagement.form = {
     name: '',
+    parent_id: null,
     description: '',
-    adminUserId: '',
-    adminPassword: '',
-    adminConfirmPassword: '',
-    adminPhone: '',
-    userIdError: '',
-    phoneError: ''
+    sort_order: 0
   }
   departmentManagement.modalVisible = true
 }
@@ -262,66 +303,11 @@ const showEditDepartmentModal = (department) => {
   departmentManagement.editDepartmentId = department.id
   departmentManagement.form = {
     name: department.name,
+    parent_id: department.parent_id,
     description: department.description || '',
-    adminUserId: '',
-    adminPassword: '',
-    adminConfirmPassword: '',
-    adminPhone: '',
-    userIdError: '',
-    phoneError: ''
+    sort_order: department.sort_order || 0
   }
   departmentManagement.modalVisible = true
-}
-
-// 验证手机号格式
-const validatePhoneNumber = (phone) => {
-  if (!phone) {
-    return true // 手机号可选
-  }
-  const phoneRegex = /^1[3-9]\d{9}$/
-  return phoneRegex.test(phone)
-}
-
-// 监听手机号输入变化
-watch(
-  () => departmentManagement.form.adminPhone,
-  (newPhone) => {
-    departmentManagement.form.phoneError = ''
-    if (newPhone && !validatePhoneNumber(newPhone)) {
-      departmentManagement.form.phoneError = '请输入正确的手机号格式'
-    }
-  }
-)
-
-// 检查管理员用户ID是否可用
-const checkAdminUserId = async () => {
-  const userId = departmentManagement.form.adminUserId.trim()
-  departmentManagement.form.userIdError = ''
-
-  if (!userId) {
-    return
-  }
-
-  // 验证格式
-  if (!/^[a-zA-Z0-9_]+$/.test(userId)) {
-    departmentManagement.form.userIdError = '用户ID只能包含字母、数字和下划线'
-    return
-  }
-
-  if (userId.length < 3 || userId.length > 20) {
-    departmentManagement.form.userIdError = '用户ID长度必须在3-20个字符之间'
-    return
-  }
-
-  // 检查是否已存在
-  try {
-    const result = await apiSuperAdminGet(`/api/auth/check-user-id/${userId}`)
-    if (!result.is_available) {
-      departmentManagement.form.userIdError = '该用户ID已被使用'
-    }
-  } catch (error) {
-    console.error('检查用户ID失败:', error)
-  }
 }
 
 // 处理部门表单提交
@@ -338,70 +324,25 @@ const handleDepartmentFormSubmit = async () => {
       return
     }
 
-    // 验证管理员用户ID
-    const adminUserId = departmentManagement.form.adminUserId.trim()
-    if (!adminUserId) {
-      notification.error({ message: '请输入管理员用户ID' })
-      return
-    }
-
-    if (!/^[a-zA-Z0-9_]+$/.test(adminUserId)) {
-      notification.error({ message: '用户ID只能包含字母、数字和下划线' })
-      return
-    }
-
-    if (adminUserId.length < 3 || adminUserId.length > 20) {
-      notification.error({ message: '用户ID长度必须在3-20个字符之间' })
-      return
-    }
-
-    if (departmentManagement.form.userIdError) {
-      notification.error({ message: '管理员用户ID已存在或格式错误' })
-      return
-    }
-
-    // 验证密码
-    if (!departmentManagement.form.adminPassword) {
-      notification.error({ message: '请输入管理员密码' })
-      return
-    }
-
-    if (
-      departmentManagement.form.adminPassword !== departmentManagement.form.adminConfirmPassword
-    ) {
-      notification.error({ message: '两次输入的密码不一致' })
-      return
-    }
-
-    // 验证手机号
-    if (
-      departmentManagement.form.adminPhone &&
-      !validatePhoneNumber(departmentManagement.form.adminPhone)
-    ) {
-      notification.error({ message: '请输入正确的手机号格式' })
-      return
-    }
-
     departmentManagement.loading = true
 
     if (departmentManagement.editMode) {
       // 更新部门
       await departmentApi.updateDepartment(departmentManagement.editDepartmentId, {
         name: departmentManagement.form.name.trim(),
-        description: departmentManagement.form.description.trim() || undefined
+        description: departmentManagement.form.description.trim() || null,
+        sort_order: departmentManagement.form.sort_order
       })
       notification.success({ message: '部门更新成功' })
     } else {
-      // 创建部门，同时创建管理员
+      // 创建部门
       await departmentApi.createDepartment({
         name: departmentManagement.form.name.trim(),
-        description: departmentManagement.form.description.trim() || undefined,
-        admin_user_id: adminUserId,
-        admin_password: departmentManagement.form.adminPassword,
-        admin_phone: departmentManagement.form.adminPhone || undefined
+        parent_id: departmentManagement.form.parent_id || null,
+        description: departmentManagement.form.description.trim() || null,
+        sort_order: departmentManagement.form.sort_order
       })
-
-      notification.success({ message: `部门创建成功，管理员 "${adminUserId}" 已创建` })
+      notification.success({ message: '部门创建成功' })
     }
 
     // 重新获取部门列表
@@ -499,9 +440,30 @@ onMounted(() => {
       }
 
       .department-name {
+        display: flex;
+        align-items: center;
+        
+        .level-indent {
+          display: inline-block;
+          width: 24px;
+        }
+        
+        .level-indicator {
+          color: var(--gray-400);
+          margin-right: 8px;
+          font-size: 12px;
+        }
+        
         .name-text {
           font-weight: 500;
           color: var(--gray-900);
+        }
+        
+        .level-tag {
+          margin-left: 8px;
+          font-size: 11px;
+          padding: 0 6px;
+          line-height: 18px;
         }
       }
 
