@@ -19,9 +19,9 @@ import httpx
 from src.utils import logger
 
 # API 配置
-API_BASE_URL = "http://localhost:5050/api"
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "1234hbnj"
+API_BASE_URL = "http://47.122.119.66:5050/api"
+ADMIN_USERNAME = "whzykj"
+ADMIN_PASSWORD = "sgtGtw@h3%dji"
 
 
 # 部门数据结构（树形）

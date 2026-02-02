@@ -59,8 +59,8 @@ class DepartmentService:
                 # 创建部门
                 result = await session.execute(
                     text("""
-                        INSERT INTO departments (name, parent_id, level, path, sort_order, description)
-                        VALUES (:name, :parent_id, :level, :path, :sort_order, :description)
+                        INSERT INTO departments (name, parent_id, level, path, sort_order, description, is_active)
+                        VALUES (:name, :parent_id, :level, :path, :sort_order, :description, :is_active)
                         RETURNING id, name, parent_id, level, path, sort_order, description, is_active, created_at, updated_at
                     """),
                     {
@@ -69,7 +69,8 @@ class DepartmentService:
                         "level": level,
                         "path": path,
                         "sort_order": sort_order,
-                        "description": description
+                        "description": description,
+                        "is_active": 1
                     }
                 )
                 
