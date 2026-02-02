@@ -10,9 +10,16 @@
 1. 为现有数据设置默认值（如果有 NULL）
 2. 添加 DEFAULT 约束
 3. 确保非空约束生效
+
+运行：docker compose exec api python scripts/fix_department_is_active.py
 """
 
 import asyncio
+import sys
+from pathlib import Path
+
+# 添加项目根目录到 Python 路径
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import text
 
