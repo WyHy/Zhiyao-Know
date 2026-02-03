@@ -1,12 +1,13 @@
 <script setup>
 import { ref, reactive, onMounted, computed, provide } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck, Folder } from 'lucide-vue-next'
+import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck, Folder, FileSearch } from 'lucide-vue-next'
 
 import { useConfigStore } from '@/stores/config'
 import { useDatabaseStore } from '@/stores/database'
 import { useInfoStore } from '@/stores/info'
 import { useTaskerStore } from '@/stores/tasker'
+import { useUserStore } from '@/stores/user'
 import { storeToRefs } from 'pinia'
 import UserInfoComponent from '@/components/UserInfoComponent.vue'
 import DebugComponent from '@/components/DebugComponent.vue'
@@ -17,6 +18,7 @@ const configStore = useConfigStore()
 const databaseStore = useDatabaseStore()
 const infoStore = useInfoStore()
 const taskerStore = useTaskerStore()
+const userStore = useUserStore()
 const { activeCount: activeCountRef, isDrawerOpen } = storeToRefs(taskerStore)
 
 const layoutSettings = reactive({
@@ -47,7 +49,13 @@ const getRemoteConfig = () => {
 }
 
 const getRemoteDatabase = () => {
-  databaseStore.loadDatabases()
+  // 只有管理员才需要加载知识库列表
+  if (userStore.isAdmin) {
+    databaseStore.loadDatabases().catch((error) => {
+      // 静默处理错误，避免普通用户看到权限错误提示
+      console.error('加载知识库列表失败:', error)
+    })
+  }
 }
 
 // GitHub stars fetch removed
@@ -68,34 +76,33 @@ console.log(route)
 
 const activeTaskCount = computed(() => activeCountRef.value || 0)
 
-// 下面是导航菜单部分，只保留知识库
-const mainList = [
-  {
+// 下面是导航菜单部分
+const mainList = computed(() => {
+  const isAdmin = userStore.isAdmin
+  const list = []
+  
+  // 知识库菜单（所有用户可见）
+  list.push({
     name: '知识库',
-    path: '/database',
-    icon: Folder,
-    activeIcon: Folder
+    path: '/knowledge',
+    icon: FileSearch,
+    activeIcon: FileSearch,
+    hidden: false
+  })
+  
+  // 知识库管理菜单（仅管理员可见）
+  if (isAdmin) {
+    list.push({
+      name: '知识库管理',
+      path: '/database',
+      icon: Folder,
+      activeIcon: Folder,
+      hidden: false
+    })
   }
-  // 其他菜单暂时注释
-  // {
-  //   name: '智能体',
-  //   path: '/agent',
-  //   icon: Bot,
-  //   activeIcon: Bot
-  // },
-  // {
-  //   name: '图谱',
-  //   path: '/graph',
-  //   icon: Waypoints,
-  //   activeIcon: Waypoints
-  // },
-  // {
-  //   name: 'Dashboard',
-  //   path: '/dashboard',
-  //   icon: BarChart3,
-  //   activeIcon: BarChart3
-  // }
-]
+  
+  return list
+})
 
 // Provide settings modal methods to child components
 provide('settingsModal', {
@@ -117,12 +124,12 @@ provide('settingsModal', {
           :to="item.path"
           v-show="!item.hidden"
           class="nav-item"
-          active-class="active"
+          :class="{ active: route.path === item.path || route.path.startsWith(item.path + '/') }"
         >
           <div class="nav-item-content">
             <component
               class="icon"
-              :is="route.path.startsWith(item.path) ? item.activeIcon : item.icon"
+              :is="route.path === item.path || route.path.startsWith(item.path + '/') ? item.activeIcon : item.icon"
               size="22"
             />
             <span class="nav-item-text">{{ item.name }}</span>

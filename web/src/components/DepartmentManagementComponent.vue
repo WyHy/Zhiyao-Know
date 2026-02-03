@@ -25,11 +25,25 @@
             :columns="columns"
             :rowKey="(record) => record.id"
             :pagination="false"
+            :defaultExpandAllRows="false"
+            :expandedRowKeys="expandedRowKeys"
+            @expand="handleExpand"
             class="department-table"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'name'">
                 <div class="department-name">
+                  <span 
+                    v-if="record.children && record.children.length > 0"
+                    class="expand-icon"
+                    @click="toggleExpand(record.id)"
+                  >
+                    {{ expandedRowKeys.includes(record.id) ? '−' : '+' }}
+                  </span>
+                  <span v-else class="expand-icon-placeholder"></span>
+                  <a-tag :color="getLevelColor(record.level)" class="level-tag">
+                    L{{ record.level }}
+                  </a-tag>
                   <span class="name-text">{{ record.name }}</span>
                 </div>
               </template>
@@ -87,6 +101,17 @@
       class="department-modal"
     >
       <a-form layout="vertical" class="department-form">
+        <a-form-item label="上级部门" class="form-item">
+          <a-select
+            v-model:value="departmentManagement.form.parent_id"
+            placeholder="请选择上级部门（可选，不选则为顶级部门）"
+            size="large"
+            allow-clear
+            :options="parentDepartmentOptions"
+          />
+          <div class="help-text">不选择则创建为顶级部门</div>
+        </a-form-item>
+
         <a-form-item label="部门名称" required class="form-item">
           <a-input
             v-model:value="departmentManagement.form.name"
@@ -106,71 +131,26 @@
           />
         </a-form-item>
 
-        <a-divider v-if="!departmentManagement.editMode" />
-
-        <template v-if="!departmentManagement.editMode">
-          <div class="admin-section-title">
-            <TeamOutlined />
-            <span>部门管理员</span>
-          </div>
-          <p class="admin-section-hint">
-            创建部门时必须同时创建管理员，该管理员将负责管理本部门用户
-          </p>
-
-          <a-form-item label="管理员用户ID" required class="form-item">
-            <a-input
-              v-model:value="departmentManagement.form.adminUserId"
-              placeholder="请输入管理员用户ID（3-20位字母/数字/下划线）"
-              size="large"
-              :maxlength="20"
-              @blur="checkAdminUserId"
-            />
-            <div v-if="departmentManagement.form.userIdError" class="error-text">
-              {{ departmentManagement.form.userIdError }}
-            </div>
-            <div v-else class="help-text">此ID将用于登录</div>
-          </a-form-item>
-
-          <a-form-item label="密码" required class="form-item">
-            <a-input-password
-              v-model:value="departmentManagement.form.adminPassword"
-              placeholder="请输入管理员密码"
-              size="large"
-              :maxlength="50"
-            />
-          </a-form-item>
-
-          <a-form-item label="确认密码" required class="form-item">
-            <a-input-password
-              v-model:value="departmentManagement.form.adminConfirmPassword"
-              placeholder="请再次输入密码"
-              size="large"
-              :maxlength="50"
-            />
-          </a-form-item>
-
-          <a-form-item label="手机号（可选）" class="form-item">
-            <a-input
-              v-model:value="departmentManagement.form.adminPhone"
-              placeholder="请输入手机号（可用于登录）"
-              size="large"
-              :maxlength="11"
-            />
-            <div v-if="departmentManagement.form.phoneError" class="error-text">
-              {{ departmentManagement.form.phoneError }}
-            </div>
-          </a-form-item>
-        </template>
+        <a-form-item label="排序顺序" class="form-item">
+          <a-input-number
+            v-model:value="departmentManagement.form.sort_order"
+            placeholder="排序顺序"
+            size="large"
+            :min="0"
+            style="width: 100%"
+          />
+          <div class="help-text">同级部门按此值排序，数字越小越靠前</div>
+        </a-form-item>
       </a-form>
     </a-modal>
   </div>
 </template>
 
 <script setup>
-import { reactive, onMounted, watch } from 'vue'
+import { reactive, onMounted, watch, computed, ref } from 'vue'
 import { notification, Modal } from 'ant-design-vue'
-import { departmentApi, apiSuperAdminGet } from '@/apis'
-import { DeleteOutlined, EditOutlined, PlusOutlined, TeamOutlined } from '@ant-design/icons-vue'
+import { departmentApi } from '@/apis'
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
 
 // 表格列定义
 const columns = [
@@ -201,6 +181,69 @@ const columns = [
   }
 ]
 
+// 展开的行
+const expandedRowKeys = ref([])
+
+// 扁平化部门列表（用于选择上级部门）
+const flattenDepartmentsForSelect = (deptList, result = [], excludeId = null, level = 0) => {
+  deptList.forEach(dept => {
+    if (dept.id !== excludeId) {
+      result.push({
+        value: dept.id,
+        label: '  '.repeat(level) + dept.name,
+        level: dept.level
+      })
+      if (dept.children && dept.children.length > 0) {
+        flattenDepartmentsForSelect(dept.children, result, excludeId, level + 1)
+      }
+    }
+  })
+  return result
+}
+
+// 上级部门选项
+const parentDepartmentOptions = computed(() => {
+  if (!departmentManagement.departments.length) return []
+  const excludeId = departmentManagement.editMode ? departmentManagement.editDepartmentId : null
+  return flattenDepartmentsForSelect(departmentManagement.departments, [], excludeId)
+})
+
+// 获取级别颜色
+const getLevelColor = (level) => {
+  const colors = {
+    1: 'blue',
+    2: 'green',
+    3: 'orange',
+    4: 'red',
+    5: 'purple'
+  }
+  return colors[level] || 'default'
+}
+
+// 切换展开/收起
+const toggleExpand = (id) => {
+  const index = expandedRowKeys.value.indexOf(id)
+  if (index > -1) {
+    expandedRowKeys.value.splice(index, 1)
+  } else {
+    expandedRowKeys.value.push(id)
+  }
+}
+
+// 处理展开事件
+const handleExpand = (expanded, record) => {
+  if (expanded) {
+    if (!expandedRowKeys.value.includes(record.id)) {
+      expandedRowKeys.value.push(record.id)
+    }
+  } else {
+    const index = expandedRowKeys.value.indexOf(record.id)
+    if (index > -1) {
+      expandedRowKeys.value.splice(index, 1)
+    }
+  }
+}
+
 // 部门管理状态
 const departmentManagement = reactive({
   loading: false,
@@ -213,12 +256,8 @@ const departmentManagement = reactive({
   form: {
     name: '',
     description: '',
-    adminUserId: '',
-    adminPassword: '',
-    adminConfirmPassword: '',
-    adminPhone: '',
-    userIdError: '',
-    phoneError: ''
+    parent_id: null,
+    sort_order: 0
   }
 })
 
@@ -245,12 +284,8 @@ const showAddDepartmentModal = () => {
   departmentManagement.form = {
     name: '',
     description: '',
-    adminUserId: '',
-    adminPassword: '',
-    adminConfirmPassword: '',
-    adminPhone: '',
-    userIdError: '',
-    phoneError: ''
+    parent_id: null,
+    sort_order: 0
   }
   departmentManagement.modalVisible = true
 }
@@ -263,66 +298,12 @@ const showEditDepartmentModal = (department) => {
   departmentManagement.form = {
     name: department.name,
     description: department.description || '',
-    adminUserId: '',
-    adminPassword: '',
-    adminConfirmPassword: '',
-    adminPhone: '',
-    userIdError: '',
-    phoneError: ''
+    parent_id: department.parent_id,
+    sort_order: department.sort_order || 0
   }
   departmentManagement.modalVisible = true
 }
 
-// 验证手机号格式
-const validatePhoneNumber = (phone) => {
-  if (!phone) {
-    return true // 手机号可选
-  }
-  const phoneRegex = /^1[3-9]\d{9}$/
-  return phoneRegex.test(phone)
-}
-
-// 监听手机号输入变化
-watch(
-  () => departmentManagement.form.adminPhone,
-  (newPhone) => {
-    departmentManagement.form.phoneError = ''
-    if (newPhone && !validatePhoneNumber(newPhone)) {
-      departmentManagement.form.phoneError = '请输入正确的手机号格式'
-    }
-  }
-)
-
-// 检查管理员用户ID是否可用
-const checkAdminUserId = async () => {
-  const userId = departmentManagement.form.adminUserId.trim()
-  departmentManagement.form.userIdError = ''
-
-  if (!userId) {
-    return
-  }
-
-  // 验证格式
-  if (!/^[a-zA-Z0-9_]+$/.test(userId)) {
-    departmentManagement.form.userIdError = '用户ID只能包含字母、数字和下划线'
-    return
-  }
-
-  if (userId.length < 3 || userId.length > 20) {
-    departmentManagement.form.userIdError = '用户ID长度必须在3-20个字符之间'
-    return
-  }
-
-  // 检查是否已存在
-  try {
-    const result = await apiSuperAdminGet(`/api/auth/check-user-id/${userId}`)
-    if (!result.is_available) {
-      departmentManagement.form.userIdError = '该用户ID已被使用'
-    }
-  } catch (error) {
-    console.error('检查用户ID失败:', error)
-  }
-}
 
 // 处理部门表单提交
 const handleDepartmentFormSubmit = async () => {
@@ -338,70 +319,23 @@ const handleDepartmentFormSubmit = async () => {
       return
     }
 
-    // 验证管理员用户ID
-    const adminUserId = departmentManagement.form.adminUserId.trim()
-    if (!adminUserId) {
-      notification.error({ message: '请输入管理员用户ID' })
-      return
-    }
-
-    if (!/^[a-zA-Z0-9_]+$/.test(adminUserId)) {
-      notification.error({ message: '用户ID只能包含字母、数字和下划线' })
-      return
-    }
-
-    if (adminUserId.length < 3 || adminUserId.length > 20) {
-      notification.error({ message: '用户ID长度必须在3-20个字符之间' })
-      return
-    }
-
-    if (departmentManagement.form.userIdError) {
-      notification.error({ message: '管理员用户ID已存在或格式错误' })
-      return
-    }
-
-    // 验证密码
-    if (!departmentManagement.form.adminPassword) {
-      notification.error({ message: '请输入管理员密码' })
-      return
-    }
-
-    if (
-      departmentManagement.form.adminPassword !== departmentManagement.form.adminConfirmPassword
-    ) {
-      notification.error({ message: '两次输入的密码不一致' })
-      return
-    }
-
-    // 验证手机号
-    if (
-      departmentManagement.form.adminPhone &&
-      !validatePhoneNumber(departmentManagement.form.adminPhone)
-    ) {
-      notification.error({ message: '请输入正确的手机号格式' })
-      return
-    }
-
     departmentManagement.loading = true
+
+    const formData = {
+      name: departmentManagement.form.name.trim(),
+      description: departmentManagement.form.description.trim() || undefined,
+      parent_id: departmentManagement.form.parent_id || null,
+      sort_order: departmentManagement.form.sort_order || 0
+    }
 
     if (departmentManagement.editMode) {
       // 更新部门
-      await departmentApi.updateDepartment(departmentManagement.editDepartmentId, {
-        name: departmentManagement.form.name.trim(),
-        description: departmentManagement.form.description.trim() || undefined
-      })
+      await departmentApi.updateDepartment(departmentManagement.editDepartmentId, formData)
       notification.success({ message: '部门更新成功' })
     } else {
-      // 创建部门，同时创建管理员
-      await departmentApi.createDepartment({
-        name: departmentManagement.form.name.trim(),
-        description: departmentManagement.form.description.trim() || undefined,
-        admin_user_id: adminUserId,
-        admin_password: departmentManagement.form.adminPassword,
-        admin_phone: departmentManagement.form.adminPhone || undefined
-      })
-
-      notification.success({ message: `部门创建成功，管理员 "${adminUserId}" 已创建` })
+      // 创建部门
+      await departmentApi.createDepartment(formData)
+      notification.success({ message: '部门创建成功' })
     }
 
     // 重新获取部门列表
@@ -498,12 +432,40 @@ onMounted(() => {
         padding: 8px 12px;
       }
 
-      .department-name {
-        .name-text {
-          font-weight: 500;
-          color: var(--gray-900);
+    .department-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      .expand-icon {
+        cursor: pointer;
+        width: 20px;
+        text-align: center;
+        font-weight: bold;
+        color: var(--gray-600);
+        user-select: none;
+        font-size: 16px;
+        line-height: 1;
+
+        &:hover {
+          color: var(--main-color);
         }
       }
+
+      .expand-icon-placeholder {
+        width: 20px;
+      }
+
+      .level-tag {
+        margin: 0;
+        font-size: 12px;
+      }
+
+      .name-text {
+        font-weight: 500;
+        color: var(--gray-900);
+      }
+    }
 
       .description-text {
         color: var(--gray-600);

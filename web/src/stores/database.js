@@ -55,7 +55,9 @@ export const useDatabaseStore = defineStore('database', () => {
       })
     } catch (error) {
       console.error('加载数据库列表失败:', error)
-      if (error.message.includes('权限')) {
+      // 只在明确需要提示时才显示错误（例如在管理员页面主动操作时）
+      // 避免在 AppLayout 自动加载时对普通用户显示错误
+      if (error.message.includes('权限') && router.currentRoute.value.meta?.requiresAdmin) {
         message.error('没有权限访问知识库')
       }
       throw error
@@ -166,8 +168,16 @@ export const useDatabaseStore = defineStore('database', () => {
   async function deleteFile(fileId) {
     state.lock = true
     try {
+      // 获取文件信息用于提示
+      const files = database.value.files || {}
+      const file = files[fileId]
+      const fileName = file?.filename || '文件'
+      
       await documentApi.deleteDocument(databaseId.value, fileId)
       await getDatabaseInfo(undefined, true) // Skip query params for file deletion
+      
+      // 显示删除成功提示
+      message.success(`已删除${fileName}`)
     } catch (error) {
       console.error(error)
       message.error(error.message || '删除失败')
@@ -227,7 +237,18 @@ export const useDatabaseStore = defineStore('database', () => {
           }
           progressMessage?.()
           if (successCount > 0 && failureCount === 0) {
-            message.success(`成功删除 ${successCount} 个文件`)
+            // 获取删除的文件名用于提示
+            const deletedFiles = validFileIds.slice(0, successCount).map(id => {
+              const file = files[id]
+              return file?.filename || '文件'
+            })
+            
+            if (successCount === 1) {
+              message.success(`已删除${deletedFiles[0]}`)
+            } else {
+              const firstFileName = deletedFiles[0]
+              message.success(`已删除${firstFileName}等${successCount}个文件`)
+            }
           } else if (successCount > 0 && failureCount > 0) {
             message.warning(`成功删除 ${successCount} 个文件，${failureCount} 个文件删除失败`)
           } else if (failureCount > 0) {

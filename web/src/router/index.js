@@ -78,6 +78,19 @@ const router = createRouter({
       ]
     },
     {
+      path: '/knowledge',
+      name: 'knowledge',
+      component: AppLayout,
+      children: [
+        {
+          path: '',
+          name: 'KnowledgeComp',
+          component: () => import('../views/KnowledgeView.vue'),
+          meta: { keepAlive: true, requiresAuth: true }
+        }
+      ]
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',
       component: () => import('../views/EmptyView.vue'),
@@ -118,37 +131,18 @@ router.beforeEach(async (to, from, next) => {
 
   // 如果路由需要管理员权限但用户不是管理员
   if (requiresAdmin && !isAdmin) {
-    // 如果是普通用户，跳转到默认智能体页面
-    try {
-      const agentStore = useAgentStore()
-      // 等待 store 初始化完成
-      if (!agentStore.isInitialized) {
-        await agentStore.initialize()
-      }
-
-      const defaultAgent = agentStore.defaultAgent
-      if (defaultAgent && defaultAgent.id) {
-        next(`/agent/${defaultAgent.id}`)
-      } else {
-        // 如果没有默认智能体，可以考虑跳转到第一个可用的智能体，或者一个特定的页面
-        const agentIds = Object.keys(agentStore.agents)
-        if (agentIds.length > 0) {
-          next(`/agent/${agentIds[0]}`)
-        } else {
-          // 没有可用的智能体，跳转到首页
-          next('/')
-        }
-      }
-    } catch (error) {
-      console.error('获取智能体信息失败:', error)
-      next('/')
-    }
+    // 普通用户跳转到知识库页面
+    next('/knowledge')
     return
   }
 
-  // 如果用户已登录但访问登录页（首页），默认跳转到知识库
+  // 如果用户已登录但访问登录页（首页），根据用户角色跳转
   if (to.path === '/' && isLoggedIn) {
-    next('/database')
+    if (isAdmin) {
+      next('/database')
+    } else {
+      next('/knowledge')
+    }
     return
   }
 

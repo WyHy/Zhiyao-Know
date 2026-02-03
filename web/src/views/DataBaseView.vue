@@ -185,7 +185,7 @@
     </div>
 
     <!-- 主布局：左右分栏 -->
-    <div class="database-layout">
+    <div class="unified-layout">
       <!-- 左侧：知识库列表 -->
       <div class="database-sidebar">
         <div class="sidebar-header">
@@ -306,7 +306,7 @@ import FileDetailModal from '@/components/FileDetailModal.vue'
 import { parseToShanghai } from '@/utils/time'
 import AiTextarea from '@/components/AiTextarea.vue'
 import { getKbTypeLabel, getKbTypeIcon, getKbTypeColor } from '@/utils/kb_utils'
-import { getFileIcon } from '@/utils/file_utils'
+import { getFileIcon, formatFileSize } from '@/utils/file_utils'
 
 const route = useRoute()
 const router = useRouter()
@@ -972,14 +972,7 @@ const handleDrop = (event) => {
   }
 }
 
-// 格式化文件大小
-const formatFileSize = (bytes) => {
-  if (!bytes) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
-}
+// formatFileSize 已从 @/utils/file_utils 导入，不需要重复定义
 
 // 监听上传任务，只在有需要跟踪的任务时启动轮询
 watch(
@@ -1024,6 +1017,10 @@ watch(
 onMounted(() => {
   loadSupportedKbTypes()
   databaseStore.loadDatabases()
+  if (databaseStore.databaseId) {
+    selectedDatabaseId.value = databaseStore.databaseId
+    databaseStore.getDatabaseInfo(databaseStore.databaseId)
+  }
 })
 
 onBeforeUnmount(() => {
@@ -1046,13 +1043,12 @@ onBeforeUnmount(() => {
   box-sizing: border-box; /* 确保 padding 和 margin 包含在高度内 */
 }
 
-.database-layout {
+.unified-layout {
   display: flex;
   flex: 1;
   overflow: hidden;
 }
 
-// 左侧知识库列表
 .database-sidebar {
   width: 240px;
   border-right: 1px solid var(--gray-100);
@@ -1072,29 +1068,37 @@ onBeforeUnmount(() => {
     font-size: 16px;
     color: var(--gray-900);
 
-    .header-title {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .header-add-btn {
-      flex-shrink: 0;
-    }
-
     .header-icon {
       width: 20px;
       height: 20px;
       color: var(--main-color);
     }
+
+    .header-add-btn {
+      font-size: 14px;
+      color: var(--main-color);
+      border: none;
+      box-shadow: none;
+      padding: 4px 8px;
+      height: auto;
+      border-radius: 6px;
+
+      &:hover {
+        background-color: var(--main-10);
+      }
+    }
   }
 
   .loading-state,
   .empty-state-sidebar {
-    padding: 20px;
-    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-grow: 1;
     color: var(--gray-500);
+    font-size: 14px;
+    gap: 8px;
   }
 
   .database-list {
@@ -1106,7 +1110,6 @@ onBeforeUnmount(() => {
   .database-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 8px;
     padding: 10px 12px;
     border-radius: 8px;
@@ -1121,17 +1124,6 @@ onBeforeUnmount(() => {
     &.active {
       background: var(--main-10);
       color: var(--main-color);
-
-      .database-icon {
-        color: var(--main-color);
-      }
-    }
-    
-
-    .database-icon {
-      width: 18px;
-      height: 18px;
-      flex-shrink: 0;
     }
 
     .database-name {
@@ -1140,89 +1132,92 @@ onBeforeUnmount(() => {
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 14px;
+      font-weight: 500;
     }
   }
 }
 
-// 右侧内容区域
 .database-content {
   flex: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
 
-  .content-empty {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 60px 20px;
+.content-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--gray-0);
+  border-radius: 8px;
+  border: 1px dashed var(--gray-200);
+  color: var(--gray-500);
+  font-size: 16px;
+  text-align: center;
+  padding: 20px;
+  margin: 0 16px;
+}
 
-    .upload-hint {
-      text-align: center;
-      margin-bottom: 40px;
-
-      .hint-text {
-        font-size: 18px;
-        color: var(--gray-700);
-        margin: 0 0 12px 0;
-      }
-
-      .hint-or {
-        font-size: 14px;
-        color: var(--gray-500);
-        margin: 0;
-      }
-    }
-
-    .action-cards {
-      display: flex;
-      gap: 24px;
-      justify-content: center;
-      flex-wrap: wrap;
-
-      .action-card {
-        width: 200px;
-        height: 160px;
-        border: 2px dashed var(--gray-200);
-        border-radius: 12px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 16px;
-        cursor: pointer;
-        transition: all 0.3s;
-        background: var(--gray-0);
-
-        &:hover {
-          border-color: var(--main-color);
-          background: var(--main-5);
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px var(--shadow-1);
-        }
-
-        .card-icon {
-          width: 48px;
-          height: 48px;
-          color: var(--main-color);
-        }
-
-        .card-title {
-          font-size: 16px;
-          font-weight: 500;
-          color: var(--gray-800);
-        }
-      }
-    }
+.upload-hint {
+  margin-bottom: 20px;
+  .hint-text {
+    font-size: 16px;
+    color: var(--gray-600);
+    margin-bottom: 8px;
   }
-
-  .content-with-database {
-    flex: 1;
-    overflow: hidden;
+  .hint-or {
+    font-size: 14px;
+    color: var(--gray-400);
   }
 }
+
+.action-cards {
+  display: flex;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.action-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 160px;
+  height: 120px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background-color: var(--gray-0);
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: var(--main-color);
+    box-shadow: 0 4px 12px rgba(var(--main-color-rgb), 0.1);
+    transform: translateY(-2px);
+  }
+
+  .card-icon {
+    font-size: 36px;
+    color: var(--main-color);
+    margin-bottom: 10px;
+  }
+
+  .card-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--gray-700);
+  }
+}
+
+.content-with-database {
+  flex: 1;
+  overflow: hidden;
+}
+
+// 右侧内容区域（已删除，不再使用）
+// .database-content {
 
 // 选择知识库弹窗
 .select-database-modal {

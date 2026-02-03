@@ -1,4 +1,4 @@
-import { apiAdminGet, apiAdminPost, apiAdminPut, apiAdminDelete, apiRequest } from './base'
+import { apiAdminGet, apiAdminPost, apiAdminPut, apiAdminDelete, apiRequest, apiGet, apiPost } from './base'
 
 /**
  * 知识库管理API模块
@@ -259,6 +259,15 @@ export const queryApi = {
 // =============================================================================
 
 export const fileApi = {
+  /**
+   * 搜索文件
+   * @param {Object} params - 搜索参数
+   * @returns {Promise} - 搜索结果
+   */
+  searchFiles: async (params) => {
+    return apiPost('/api/files/search', params, {}, true, 'json')
+  },
+
   /**
    * 抓取 URL 内容
    * @param {string} url - 目标 URL
