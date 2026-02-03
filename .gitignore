@@ -79,3 +79,7 @@ test/data/*.jsonl
 !test/data/lightrag_kb_test_tiny.txt
 !test/data/A_Dream_of_Red_Mansions_tiny.jsonl
 !test/data/complex_graph_test.jsonl
+
+# OCR 测试目录（保留示例图片）
+*/ocr_test/*
+!test/data/ocr_test/PixPin_2025-06-19_23-42-17.png
