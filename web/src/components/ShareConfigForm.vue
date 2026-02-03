@@ -58,7 +58,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
-// 本地状态，直接从 props 初始化
+// 本地状态
 const config = reactive({
   is_shared: true,
   accessible_department_ids: []
@@ -66,7 +66,6 @@ const config = reactive({
 
 // 初始化 config
 const initConfig = () => {
-  // 后端返回的是 accessible_departments，前端使用 accessible_department_ids
   const sourceDepts =
     props.modelValue.accessible_department_ids ?? props.modelValue.accessible_departments ?? []
   config.is_shared = props.modelValue.is_shared ?? true
@@ -74,43 +73,28 @@ const initConfig = () => {
   console.log('[ShareConfigForm] initConfig:', JSON.stringify(config))
 }
 
-// 只在组件挂载时初始化一次
-onMounted(() => {
-  initConfig()
-})
-
-// 监听本地 config 变化，同步到父组件
-watch(
-  config,
-  (newVal) => {
-    console.log('[ShareConfigForm] config 变化，emit:', JSON.stringify(newVal))
-    emit('update:modelValue', {
-      is_shared: newVal.is_shared,
-      accessible_department_ids: newVal.accessible_department_ids
-    })
-  },
-  { deep: true }
-)
-
-// 监听共享模式变化
-watch(
-  () => config.is_shared,
-  (newVal) => {
-    if (!newVal && props.autoSelectUserDept && config.accessible_department_ids.length === 0) {
-      // 切换到指定部门模式且未选中任何部门时，默认选中当前用户所在部门
-      tryAutoSelectUserDept()
-    }
-  }
-)
-
 // 递归构建树形数据
 const buildTreeData = (nodes) => {
-  return nodes.map((node) => ({
-    title: node.name,
-    value: node.id,
-    key: node.id,
-    children: node.children && node.children.length > 0 ? buildTreeData(node.children) : undefined
-  }))
+  if (!Array.isArray(nodes)) {
+    console.warn('[ShareConfigForm] buildTreeData 收到非数组数据:', nodes)
+    return []
+  }
+  
+  return nodes.map((node) => {
+    const treeNode = {
+      title: node.name,
+      value: node.id,
+      key: `dept_${node.id}`,
+      selectable: false,
+      checkable: true
+    }
+    
+    if (node.children && Array.isArray(node.children) && node.children.length > 0) {
+      treeNode.children = buildTreeData(node.children)
+    }
+    
+    return treeNode
+  })
 }
 
 // 部门树形数据
@@ -147,7 +131,50 @@ const tryAutoSelectUserDept = () => {
   }
 }
 
-// 监听用户部门变化（处理时序问题：departmentId 可能在组件 mounted 后才获取到）
+// 加载部门树
+const loadDepartments = async () => {
+  try {
+    const res = await getDepartments()
+    departmentTree.value = res.data || []
+    console.log('[ShareConfigForm] 加载部门树，节点数:', departmentTree.value.length)
+
+    if (
+      props.autoSelectUserDept &&
+      !config.is_shared &&
+      config.accessible_department_ids.length === 0
+    ) {
+      tryAutoSelectUserDept()
+    }
+  } catch (e) {
+    console.error('加载部门列表失败:', e)
+    departmentTree.value = []
+  }
+}
+
+// 监听本地 config 变化，同步到父组件
+watch(
+  config,
+  (newVal) => {
+    console.log('[ShareConfigForm] config 变化，emit:', JSON.stringify(newVal))
+    emit('update:modelValue', {
+      is_shared: newVal.is_shared,
+      accessible_department_ids: newVal.accessible_department_ids
+    })
+  },
+  { deep: true }
+)
+
+// 监听共享模式变化
+watch(
+  () => config.is_shared,
+  (newVal) => {
+    if (!newVal && props.autoSelectUserDept && config.accessible_department_ids.length === 0) {
+      tryAutoSelectUserDept()
+    }
+  }
+)
+
+// 监听用户部门变化
 watch(
   () => userStore.departmentId,
   (newDeptId) => {
@@ -162,41 +189,18 @@ watch(
   }
 )
 
-// 加载部门树
-const loadDepartments = async () => {
-  try {
-    const res = await getDepartments()
-    // getDepartments 返回的是 { data: [...树形结构] }
-    departmentTree.value = res.data || []
-    console.log('[ShareConfigForm] 加载部门树:', departmentTree.value)
-
-    // 如果需要，自动选中用户所在部门
-    if (
-      props.autoSelectUserDept &&
-      !config.is_shared &&
-      config.accessible_department_ids.length === 0
-    ) {
-      tryAutoSelectUserDept()
-    }
-  } catch (e) {
-    console.error('加载部门列表失败:', e)
-    departmentTree.value = []
-  }
-}
-
-onMounted(() => {
-  loadDepartments()
+// 组件挂载时初始化
+onMounted(async () => {
+  initConfig()
+  await loadDepartments()
 })
 
-// 验证当前用户所在部门是否在可访问范围内
-// 返回 { valid: boolean, message: string }
+// 验证
 const validate = () => {
-  // 全员共享模式不需要验证
   if (config.is_shared) {
     return { valid: true, message: '' }
   }
 
-  // 指定部门模式，需要验证当前用户所在部门是否在列表中
   const userDeptId = userStore.departmentId
   if (!userDeptId) {
     return {
