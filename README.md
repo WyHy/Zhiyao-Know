@@ -114,9 +114,11 @@
 
 ## 快速开始
 
-克隆代码，并初始化
+### 🚀 全新部署（推荐）
 
-```
+克隆代码并初始化：
+
+```bash
 git clone --branch v0.4.4 --depth 1 https://github.com/xerrors/Yuxi-Know.git
 cd Yuxi-Know
 
@@ -127,13 +129,36 @@ cd Yuxi-Know
 .\scripts\init.ps1
 ```
 
-然后需要使用 docker 启动项目
+启动服务：
 
+```bash
+# 使用 docker compose 启动
+docker compose up -d
+
+# 或使用 Makefile
+make start
 ```
-docker compose up --build
+
+**⚠️ 重要**：首次启动后，必须运行数据库初始化：
+
+```bash
+# 初始化数据库（确保所有约束正确设置）
+make init-db
+
+# 或直接运行
+docker compose exec api python scripts/init_database.py
 ```
 
 等待启动完成后，访问 `http://localhost:5173`
+
+> 💡 **详细部署文档**: 查看 [全新部署指南](docs/vibe/deployment-guide.md) 了解更多配置选项和故障排除。
+
+### 📊 添加测试数据（可选）
+
+```bash
+# 批量创建部门和用户
+docker compose exec api python scripts/batch_create_departments_users.py
+```
 
 ## 示例与演示
 

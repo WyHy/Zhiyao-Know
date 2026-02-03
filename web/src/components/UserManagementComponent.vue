@@ -12,105 +12,160 @@
       </a-button>
     </div>
 
-    <!-- 主内容区域 -->
+    <!-- 搜索和筛选区域 -->
+    <div class="filter-section">
+      <a-space size="middle" wrap>
+        <!-- 搜索框 -->
+        <a-input-search
+          v-model:value="filterState.searchKeyword"
+          placeholder="搜索用户名、ID或手机号"
+          style="width: 280px"
+          size="large"
+          allow-clear
+          @search="handleSearch"
+        >
+          <template #prefix>
+            <SearchOutlined />
+          </template>
+        </a-input-search>
+
+        <!-- 角色筛选 -->
+        <a-select
+          v-model:value="filterState.roleFilter"
+          placeholder="筛选角色"
+          style="width: 150px"
+          size="large"
+          allow-clear
+          @change="handleFilter"
+        >
+          <a-select-option value="">全部角色</a-select-option>
+          <a-select-option value="superadmin">超级管理员</a-select-option>
+          <a-select-option value="admin">管理员</a-select-option>
+          <a-select-option value="user">普通用户</a-select-option>
+        </a-select>
+
+        <!-- 部门筛选 -->
+        <a-tree-select
+          v-if="userStore.isSuperAdmin"
+          v-model:value="filterState.departmentFilter"
+          :tree-data="departmentTreeData"
+          placeholder="筛选部门"
+          style="width: 200px"
+          size="large"
+          allow-clear
+          @change="handleFilter"
+        />
+
+        <!-- 重置按钮 -->
+        <a-button @click="resetFilters" size="large">
+          重置
+        </a-button>
+      </a-space>
+    </div>
+
+    <!-- 主内容区域 - 表格 -->
     <div class="content-section">
       <a-spin :spinning="userManagement.loading">
         <div v-if="userManagement.error" class="error-message">
           <a-alert type="error" :message="userManagement.error" show-icon />
         </div>
 
-        <div class="cards-container">
-          <div v-if="userManagement.users.length === 0" class="empty-state">
-            <a-empty description="暂无用户数据" />
-          </div>
-          <div v-else class="user-cards-grid">
-            <div v-for="user in userManagement.users" :key="user.id" class="user-card">
-              <div class="card-header">
-                <div class="user-info-main">
-                  <div class="user-avatar">
-                    <img
-                      v-if="user.avatar"
-                      :src="user.avatar"
-                      :alt="user.username"
-                      class="avatar-img"
-                    />
-                    <div v-else class="avatar-placeholder">
-                      {{ user.username.charAt(0).toUpperCase() }}
-                    </div>
-                  </div>
-                  <div class="user-info-content">
-                    <div class="name-tag-row">
-                      <h4 class="username">{{ user.username }}</h4>
-                      <div
-                        v-if="
-                          user.role === 'admin' ||
-                          user.role === 'superadmin' ||
-                          user.department_name
-                        "
-                        class="role-dept-badge"
-                      >
-                        <span class="role-icon-wrapper" :class="getRoleClass(user.role)">
-                          <UserLock v-if="user.role === 'superadmin'" :size="14" />
-                          <UserStar v-else-if="user.role === 'admin'" :size="14" />
-                          <User v-else :size="14" />
-                        </span>
-                        <span v-if="user.department_name" class="dept-text">
-                          {{ user.department_name }}
-                        </span>
-                      </div>
-                    </div>
-                    <div class="user-id-row">ID: {{ user.user_id || '-' }}</div>
+        <a-table
+          :dataSource="filteredUsers"
+          :columns="columns"
+          :rowKey="(record) => record.id"
+          :pagination="{
+            total: filteredUsers.length,
+            pageSize: 20,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total) => `共 ${total} 个用户`
+          }"
+          class="user-table"
+        >
+          <template #bodyCell="{ column, record }">
+            <!-- 用户信息列 -->
+            <template v-if="column.key === 'user'">
+              <div class="user-cell">
+                <div class="user-avatar-small">
+                  <img
+                    v-if="record.avatar"
+                    :src="record.avatar"
+                    :alt="record.username"
+                    class="avatar-img"
+                  />
+                  <div v-else class="avatar-placeholder">
+                    {{ record.username.charAt(0).toUpperCase() }}
                   </div>
                 </div>
-              </div>
-
-              <div class="card-content">
-                <div class="info-item">
-                  <span class="info-label">手机号:</span>
-                  <span class="info-value phone-text">{{ user.phone_number || '-' }}</span>
-                </div>
-                <div class="info-item">
-                  <span class="info-label">创建时间:</span>
-                  <span class="info-value time-text">{{ formatTime(user.created_at) }}</span>
-                </div>
-                <div class="info-item">
-                  <span class="info-label">最后登录:</span>
-                  <span class="info-value time-text">{{ formatTime(user.last_login) }}</span>
+                <div class="user-info">
+                  <div class="user-name">{{ record.username }}</div>
+                  <div class="user-id-text">ID: {{ record.user_id }}</div>
                 </div>
               </div>
+            </template>
 
-              <div class="card-actions">
+            <!-- 角色列 -->
+            <template v-if="column.key === 'role'">
+              <a-tag :color="getRoleColor(record.role)">
+                <template #icon>
+                  <UserLock v-if="record.role === 'superadmin'" :size="12" />
+                  <UserStar v-else-if="record.role === 'admin'" :size="12" />
+                  <User v-else :size="12" />
+                </template>
+                {{ getRoleText(record.role) }}
+              </a-tag>
+            </template>
+
+            <!-- 部门列 -->
+            <template v-if="column.key === 'department'">
+              <span>{{ record.department_name || '-' }}</span>
+            </template>
+
+            <!-- 手机号列 -->
+            <template v-if="column.key === 'phone'">
+              <span>{{ record.phone_number || '-' }}</span>
+            </template>
+
+            <!-- 最后登录列 -->
+            <template v-if="column.key === 'lastLogin'">
+              <span class="time-text">{{ formatTime(record.last_login) }}</span>
+            </template>
+
+            <!-- 操作列 -->
+            <template v-if="column.key === 'action'">
+              <a-space>
                 <a-tooltip title="编辑用户">
                   <a-button
-                    type="text"
+                    type="link"
                     size="small"
-                    @click="showEditUserModal(user)"
-                    class="action-btn"
+                    @click="showEditUserModal(record)"
                   >
                     <EditOutlined />
-                    <span>编辑</span>
                   </a-button>
                 </a-tooltip>
                 <a-tooltip title="删除用户">
                   <a-button
-                    type="text"
+                    type="link"
                     size="small"
                     danger
-                    @click="confirmDeleteUser(user)"
+                    @click="confirmDeleteUser(record)"
                     :disabled="
-                      user.id === userStore.userId ||
-                      (user.role === 'superadmin' && userStore.userRole !== 'superadmin')
+                      record.id === userStore.userId ||
+                      (record.role === 'superadmin' && userStore.userRole !== 'superadmin')
                     "
-                    class="action-btn"
                   >
                     <DeleteOutlined />
-                    <span>删除</span>
                   </a-button>
                 </a-tooltip>
-              </div>
-            </div>
-          </div>
-        </div>
+              </a-space>
+            </template>
+          </template>
+
+          <template #emptyText>
+            <a-empty description="暂无用户数据" />
+          </template>
+        </a-table>
       </a-spin>
     </div>
 
@@ -213,20 +268,16 @@
         </a-form-item>
 
         <!-- 部门选择器（仅超级管理员可见） -->
-        <a-form-item v-if="userStore.isSuperAdmin" label="部门" class="form-item">
-          <a-select
+        <a-form-item v-if="userStore.isSuperAdmin" label="主部门" class="form-item">
+          <a-tree-select
             v-model:value="userManagement.form.departmentId"
+            :tree-data="departmentTreeData"
+            placeholder="请选择主部门"
+            allow-clear
+            tree-default-expand-all
             size="large"
-            placeholder="请选择部门"
-          >
-            <a-select-option
-              v-for="dept in departmentManagement.departments"
-              :key="dept.id"
-              :value="dept.id"
-            >
-              {{ dept.name }}
-            </a-select-option>
-          </a-select>
+          />
+          <div class="help-text">用户的主要归属部门</div>
         </a-form-item>
       </a-form>
     </a-modal>
@@ -234,15 +285,71 @@
 </template>
 
 <script setup>
-import { reactive, onMounted, watch } from 'vue'
+import { reactive, onMounted, watch, computed } from 'vue'
 import { notification, Modal } from 'ant-design-vue'
 import { useUserStore } from '@/stores/user'
 import { departmentApi } from '@/apis'
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import { User, UserLock, UserStar } from 'lucide-vue-next'
 import { formatDateTime } from '@/utils/time'
 
 const userStore = useUserStore()
+
+// 表格列定义
+const columns = [
+  {
+    title: '用户',
+    key: 'user',
+    width: 220,
+    fixed: 'left'
+  },
+  {
+    title: '角色',
+    key: 'role',
+    width: 120,
+    filters: [
+      { text: '超级管理员', value: 'superadmin' },
+      { text: '管理员', value: 'admin' },
+      { text: '普通用户', value: 'user' }
+    ],
+    onFilter: (value, record) => record.role === value
+  },
+  {
+    title: '部门',
+    key: 'department',
+    width: 180,
+    ellipsis: true
+  },
+  {
+    title: '手机号',
+    key: 'phone',
+    width: 130
+  },
+  {
+    title: '最后登录',
+    key: 'lastLogin',
+    width: 180,
+    sorter: (a, b) => {
+      const timeA = a.last_login ? new Date(a.last_login).getTime() : 0
+      const timeB = b.last_login ? new Date(b.last_login).getTime() : 0
+      return timeA - timeB
+    }
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 100,
+    fixed: 'right',
+    align: 'center'
+  }
+]
+
+// 筛选状态
+const filterState = reactive({
+  searchKeyword: '',
+  roleFilter: '',
+  departmentFilter: null
+})
 
 // 用户管理相关状态
 const userManagement = reactive({
@@ -269,18 +376,99 @@ const userManagement = reactive({
 
 // 部门列表（仅超级管理员使用）
 const departmentManagement = reactive({
-  departments: []
+  departments: [],
+  departmentTree: [] // 存储树形数据
+})
+
+// 计算属性：用于树形选择器的数据
+const departmentTreeData = computed(() => {
+  // 转换为 a-tree-select 期望的格式
+  const transformNode = (node) => {
+    const transformed = {
+      title: node.name, // 显示文本
+      value: node.id, // 值
+      key: `dept_${node.id}`, // 唯一键
+      selectable: true
+    }
+    
+    // 递归处理子节点
+    if (node.children && node.children.length > 0) {
+      transformed.children = node.children.map(transformNode)
+    }
+    
+    return transformed
+  }
+  
+  if (!Array.isArray(departmentManagement.departmentTree)) {
+    console.warn('[UserManagement] departmentTree 不是数组:', departmentManagement.departmentTree)
+    return []
+  }
+  
+  const result = departmentManagement.departmentTree.map(transformNode)
+  console.log('[UserManagement] 转换后的树形数据:', result)
+  return result
+})
+
+// 计算属性：筛选后的用户列表
+const filteredUsers = computed(() => {
+  let users = userManagement.users
+
+  // 搜索关键词筛选
+  if (filterState.searchKeyword) {
+    const keyword = filterState.searchKeyword.toLowerCase()
+    users = users.filter((user) => {
+      return (
+        user.username?.toLowerCase().includes(keyword) ||
+        user.user_id?.toLowerCase().includes(keyword) ||
+        user.phone_number?.includes(keyword)
+      )
+    })
+  }
+
+  // 角色筛选
+  if (filterState.roleFilter) {
+    users = users.filter((user) => user.role === filterState.roleFilter)
+  }
+
+  // 部门筛选
+  if (filterState.departmentFilter) {
+    users = users.filter((user) => user.department_id === filterState.departmentFilter)
+  }
+
+  return users
 })
 
 // 获取部门列表
 const fetchDepartments = async () => {
   if (!userStore.isSuperAdmin) return // 普通管理员不需要获取所有部门列表
   try {
-    const departments = await departmentApi.getDepartments()
-    departmentManagement.departments = departments
+    const response = await departmentApi.getDepartments()
+    // 后端返回格式: { success: true, data: [...] }
+    const treeData = response.data || response
+    
+    console.log('[UserManagement] 获取到的部门树数据:', treeData)
+    console.log('[UserManagement] 树形数据数量:', treeData?.length)
+    
+    // 保存原始树形数据
+    departmentManagement.departmentTree = treeData
+    
+    // 同时也保存扁平化列表（如果其他地方需要）
+    departmentManagement.departments = flattenDepartments(treeData)
   } catch (error) {
     console.error('获取部门列表失败:', error)
   }
+}
+
+// 扁平化部门树（辅助函数）
+const flattenDepartments = (tree) => {
+  const result = []
+  tree.forEach((node) => {
+    result.push(node)
+    if (node.children && node.children.length > 0) {
+      result.push(...flattenDepartments(node.children))
+    }
+  })
+  return result
 }
 
 // 添加验证用户名并生成user_id的函数
@@ -535,45 +723,40 @@ const confirmDeleteUser = (user) => {
   })
 }
 
-// 角色显示辅助函数
-const getRoleLabel = (role) => {
-  switch (role) {
-    case 'superadmin':
-      return '超级管理员'
-    case 'admin':
-      return '管理员'
-    case 'user':
-      return '普通用户'
-    default:
-      return role
-  }
+// 搜索处理
+const handleSearch = () => {
+  // 搜索逻辑已在 computed 中处理
 }
 
-// 角色标签颜色
+// 筛选处理
+const handleFilter = () => {
+  // 筛选逻辑已在 computed 中处理
+}
+
+// 重置筛选
+const resetFilters = () => {
+  filterState.searchKeyword = ''
+  filterState.roleFilter = ''
+  filterState.departmentFilter = null
+}
+
+// 角色相关辅助函数
+const getRoleText = (role) => {
+  const roleMap = {
+    superadmin: '超级管理员',
+    admin: '管理员',
+    user: '普通用户'
+  }
+  return roleMap[role] || role
+}
+
 const getRoleColor = (role) => {
-  switch (role) {
-    case 'superadmin':
-      return 'red'
-    case 'admin':
-      return 'blue'
-    case 'user':
-      return 'green'
-    default:
-      return 'default'
+  const colorMap = {
+    superadmin: 'red',
+    admin: 'blue',
+    user: 'default'
   }
-}
-
-const getRoleClass = (role) => {
-  switch (role) {
-    case 'superadmin':
-      return 'role-superadmin'
-    case 'admin':
-      return 'role-admin'
-    case 'user':
-      return 'role-user'
-    default:
-      return 'role-default'
-  }
+  return colorMap[role] || 'default'
 }
 
 // 在组件挂载时获取用户列表
@@ -819,6 +1002,86 @@ onMounted(async () => {
     font-size: 13px;
     color: var(--gray-900);
     font-family: 'Monaco', 'Consolas', monospace;
+  }
+
+  // 新增：筛选区域样式
+  .filter-section {
+    margin-bottom: 16px;
+    padding: 16px;
+    background: var(--gray-0);
+    border: 1px solid var(--gray-150);
+    border-radius: 8px;
+  }
+
+  // 新增：表格样式
+  .user-table {
+    :deep(.ant-table) {
+      background: var(--gray-0);
+    }
+
+    :deep(.ant-table-thead > tr > th) {
+      background: var(--gray-50);
+      font-weight: 500;
+      padding: 12px 16px;
+      border-bottom: 2px solid var(--gray-200);
+    }
+
+    :deep(.ant-table-tbody > tr > td) {
+      padding: 12px 16px;
+    }
+
+    :deep(.ant-table-tbody > tr:hover > td) {
+      background: var(--gray-25);
+    }
+
+    .user-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+
+      .user-avatar-small {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        overflow: hidden;
+        flex-shrink: 0;
+
+        .avatar-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .avatar-placeholder {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--color-primary-100);
+          color: var(--color-primary-600);
+          font-weight: 600;
+          font-size: 16px;
+        }
+      }
+
+      .user-info {
+        flex: 1;
+        min-width: 0;
+
+        .user-name {
+          font-weight: 500;
+          color: var(--gray-900);
+          font-size: 14px;
+          margin-bottom: 2px;
+        }
+
+        .user-id-text {
+          font-size: 12px;
+          color: var(--gray-500);
+        }
+      }
+    }
   }
 }
 

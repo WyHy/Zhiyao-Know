@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from starlette.responses import StreamingResponse
 
 from src.services.task_service import TaskContext, tasker
-from server.utils.auth_middleware import get_admin_user, get_required_user
+from server.utils.auth_middleware import get_admin_user, get_current_user, get_required_user
 from src import config, knowledge_base
 from src.knowledge.indexing import SUPPORTED_FILE_EXTENSIONS, is_supported_file_extension, process_file_to_markdown
 from src.knowledge.utils import calculate_content_hash
@@ -63,10 +63,23 @@ media_types = {
 
 
 @knowledge.get("/databases")
-async def get_databases(current_user: User = Depends(get_admin_user)):
-    """获取所有知识库（根据用户权限过滤）"""
+async def get_databases(current_user: User = Depends(get_required_user)):
+    """获取所有知识库（根据用户权限过滤）
+    
+    权限说明：
+    - 所有登录用户都可以访问
+    - 超级管理员看到所有知识库
+    - 普通用户看到：
+      1. 全员共享的知识库（is_shared=true）
+      2. 指定部门共享且用户在该部门的知识库
+      3. 不在黑名单中的知识库
+    """
     try:
-        user_info = {"role": current_user.role, "department_id": current_user.department_id}
+        user_info = {
+            "role": current_user.role,
+            "user_id": current_user.id,
+            "department_id": current_user.department_id
+        }
         return await knowledge_base.get_databases_by_user(user_info)
     except Exception as e:
         logger.error(f"获取数据库列表失败 {e}, {traceback.format_exc()}")
