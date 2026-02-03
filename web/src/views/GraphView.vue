@@ -35,6 +35,15 @@
           ><UploadOutlined /> 上传文件</a-button
         >
         <a-button
+          v-if="isNeo4j"
+          type="default"
+          danger
+          @click="showClearConfirm"
+          :disabled="!graphInfo?.entity_count || graphInfo.entity_count === 0"
+        >
+          <DeleteOutlined /> 清空图谱
+        </a-button>
+        <a-button
           v-if="unindexedCount > 0"
           type="primary"
           @click="indexNodes"
@@ -199,7 +208,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { useConfigStore } from '@/stores/config'
 import {
   UploadOutlined,
@@ -211,7 +220,9 @@ import {
   LoadingOutlined,
   HighlightOutlined,
   DatabaseOutlined,
-  ExportOutlined
+  ExportOutlined,
+  DeleteOutlined,
+  ExclamationCircleOutlined
 } from '@ant-design/icons-vue'
 import HeaderComponent from '@/components/HeaderComponent.vue'
 import { neo4jApi, unifiedApi } from '@/apis/graph_api'
@@ -613,6 +624,47 @@ const goToDatabasePage = () => {
     }
   }
 }
+
+const showClearConfirm = () => {
+  Modal.confirm({
+    title: '确认清空图谱',
+    icon: h(ExclamationCircleOutlined),
+    content: h('div', {}, [
+      h('p', '此操作将清空图数据库中的所有节点和关系，该操作不可恢复！'),
+      h(
+        'p',
+        { style: { color: 'var(--color-error-500)', fontWeight: 'bold', marginTop: '8px' } },
+        `当前图谱包含 ${graphInfo.value?.entity_count || 0} 个实体和 ${graphInfo.value?.relationship_count || 0} 个关系。`
+      )
+    ]),
+    okText: '确认清空',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk() {
+      return clearGraph()
+    }
+  })
+}
+
+const clearGraph = async () => {
+  try {
+    const data = await neo4jApi.clearGraph('neo4j')
+    if (data.success) {
+      message.success(data.message || '图谱已清空')
+      // 清空前端显示的图谱数据
+      graph.clearGraph()
+      // 刷新图谱信息
+      await loadGraphInfo()
+    } else {
+      throw new Error(data.message || '清空图谱失败')
+    }
+  } catch (error) {
+    console.error(error)
+    message.error(error.message || '清空图谱失败')
+    throw error
+  }
+}
+
 </script>
 
 <style lang="less" scoped>

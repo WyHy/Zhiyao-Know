@@ -10,15 +10,20 @@
       <p class="share-hint">
         {{ config.is_shared ? '所有用户都可以访问' : '只有指定部门的用户可以访问' }}
       </p>
-      <!-- 部门选择 -->
+      <!-- 部门选择 - 改用树形选择器 -->
       <div v-if="!config.is_shared" class="dept-selection">
-        <a-select
+        <a-tree-select
           v-model:value="config.accessible_department_ids"
-          mode="multiple"
+          :tree-data="departmentTreeData"
+          tree-checkable
+          :show-checked-strategy="SHOW_PARENT"
           placeholder="请选择可访问的部门"
           style="width: 100%"
-          :options="departmentOptions"
+          :tree-default-expand-all="false"
+          :max-tag-count="3"
+          allow-clear
         />
+        <p class="dept-hint">支持选择多个部门，包含子部门会自动包含</p>
       </div>
     </div>
   </div>
@@ -26,11 +31,14 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { TreeSelect } from 'ant-design-vue'
 import { useUserStore } from '@/stores/user'
-import { departmentApi } from '@/apis/department_api'
+import { getDepartments } from '@/apis/department_api'
+
+const SHOW_PARENT = TreeSelect.SHOW_PARENT
 
 const userStore = useUserStore()
-const departments = ref([])
+const departmentTree = ref([])
 
 const props = defineProps({
   modelValue: {
@@ -50,7 +58,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
-// 本地状态，直接从 props 初始化
+// 本地状态
 const config = reactive({
   is_shared: true,
   accessible_department_ids: []
@@ -58,7 +66,6 @@ const config = reactive({
 
 // 初始化 config
 const initConfig = () => {
-  // 后端返回的是 accessible_departments，前端使用 accessible_department_ids
   const sourceDepts =
     props.modelValue.accessible_department_ids ?? props.modelValue.accessible_departments ?? []
   config.is_shared = props.modelValue.is_shared ?? true
@@ -66,10 +73,83 @@ const initConfig = () => {
   console.log('[ShareConfigForm] initConfig:', JSON.stringify(config))
 }
 
-// 只在组件挂载时初始化一次
-onMounted(() => {
-  initConfig()
+// 递归构建树形数据
+const buildTreeData = (nodes) => {
+  if (!Array.isArray(nodes)) {
+    console.warn('[ShareConfigForm] buildTreeData 收到非数组数据:', nodes)
+    return []
+  }
+  
+  return nodes.map((node) => {
+    const treeNode = {
+      title: node.name,
+      value: node.id,
+      key: `dept_${node.id}`,
+      selectable: false,
+      checkable: true
+    }
+    
+    if (node.children && Array.isArray(node.children) && node.children.length > 0) {
+      treeNode.children = buildTreeData(node.children)
+    }
+    
+    return treeNode
+  })
+}
+
+// 部门树形数据
+const departmentTreeData = computed(() => {
+  if (!departmentTree.value || departmentTree.value.length === 0) {
+    return []
+  }
+  return buildTreeData(departmentTree.value)
 })
+
+// 获取所有部门ID（扁平化）
+const getAllDepartmentIds = (tree) => {
+  const ids = []
+  const traverse = (nodes) => {
+    nodes.forEach((node) => {
+      ids.push(node.id)
+      if (node.children && node.children.length > 0) {
+        traverse(node.children)
+      }
+    })
+  }
+  traverse(tree)
+  return ids
+}
+
+// 尝试自动选中用户所在部门
+const tryAutoSelectUserDept = () => {
+  const userDeptId = userStore.departmentId
+  if (userDeptId) {
+    const allDeptIds = getAllDepartmentIds(departmentTree.value)
+    if (allDeptIds.includes(userDeptId)) {
+      config.accessible_department_ids = [Number(userDeptId)]
+    }
+  }
+}
+
+// 加载部门树
+const loadDepartments = async () => {
+  try {
+    const res = await getDepartments()
+    departmentTree.value = res.data || []
+    console.log('[ShareConfigForm] 加载部门树，节点数:', departmentTree.value.length)
+
+    if (
+      props.autoSelectUserDept &&
+      !config.is_shared &&
+      config.accessible_department_ids.length === 0
+    ) {
+      tryAutoSelectUserDept()
+    }
+  } catch (e) {
+    console.error('加载部门列表失败:', e)
+    departmentTree.value = []
+  }
+}
 
 // 监听本地 config 变化，同步到父组件
 watch(
@@ -89,25 +169,12 @@ watch(
   () => config.is_shared,
   (newVal) => {
     if (!newVal && props.autoSelectUserDept && config.accessible_department_ids.length === 0) {
-      // 切换到指定部门模式且未选中任何部门时，默认选中当前用户所在部门
       tryAutoSelectUserDept()
     }
   }
 )
 
-// 尝试自动选中用户所在部门
-const tryAutoSelectUserDept = () => {
-  const userDeptId = userStore.departmentId
-  if (userDeptId) {
-    const deptExists = departments.value.find((d) => d.id === userDeptId)
-    if (deptExists) {
-      // 确保存储为数字类型（a-select 返回的是字符串）
-      config.accessible_department_ids = [Number(userDeptId)]
-    }
-  }
-}
-
-// 监听用户部门变化（处理时序问题：departmentId 可能在组件 mounted 后才获取到）
+// 监听用户部门变化
 watch(
   () => userStore.departmentId,
   (newDeptId) => {
@@ -122,47 +189,18 @@ watch(
   }
 )
 
-// 部门选项
-const departmentOptions = computed(() =>
-  departments.value.map((dept) => ({
-    label: dept.name,
-    value: Number(dept.id)
-  }))
-)
-
-// 加载部门列表
-const loadDepartments = async () => {
-  try {
-    const res = await departmentApi.getDepartments()
-    departments.value = res.departments || res || []
-
-    // 如果需要，自动选中用户所在部门
-    if (
-      props.autoSelectUserDept &&
-      !config.is_shared &&
-      config.accessible_department_ids.length === 0
-    ) {
-      tryAutoSelectUserDept()
-    }
-  } catch (e) {
-    console.error('加载部门列表失败:', e)
-    departments.value = []
-  }
-}
-
-onMounted(() => {
-  loadDepartments()
+// 组件挂载时初始化
+onMounted(async () => {
+  initConfig()
+  await loadDepartments()
 })
 
-// 验证当前用户所在部门是否在可访问范围内
-// 返回 { valid: boolean, message: string }
+// 验证
 const validate = () => {
-  // 全员共享模式不需要验证
   if (config.is_shared) {
     return { valid: true, message: '' }
   }
 
-  // 指定部门模式，需要验证当前用户所在部门是否在列表中
   const userDeptId = userStore.departmentId
   if (!userDeptId) {
     return {
@@ -216,6 +254,12 @@ defineExpose({
 
     .dept-selection {
       margin-top: 12px;
+
+      .dept-hint {
+        font-size: 12px;
+        color: var(--gray-500);
+        margin: 6px 0 0 0;
+      }
     }
   }
 }

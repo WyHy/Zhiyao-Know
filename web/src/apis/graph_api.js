@@ -166,6 +166,22 @@ export const neo4jApi = {
    */
   getInfo: async () => {
     return await apiGet('/api/graph/neo4j/info', {}, true)
+  },
+
+  /**
+   * 清空Neo4j图数据库
+   * @param {string} kgdb_name - Neo4j数据库名称（默认为'neo4j'）
+   * @returns {Promise} - 清空结果
+   */
+  clearGraph: async (kgdb_name = 'neo4j') => {
+    return await apiPost(
+      '/api/graph/neo4j/clear',
+      {
+        kgdb_name: kgdb_name
+      },
+      {},
+      true
+    )
   }
 }
 
