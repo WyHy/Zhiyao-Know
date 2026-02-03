@@ -53,7 +53,6 @@
           style="width: 200px"
           size="large"
           allow-clear
-          :field-names="{ label: 'name', value: 'id', children: 'children' }"
           @change="handleFilter"
         />
 
@@ -275,7 +274,6 @@
             :tree-data="departmentTreeData"
             placeholder="请选择主部门"
             allow-clear
-            :field-names="{ label: 'name', value: 'id', children: 'children' }"
             tree-default-expand-all
             size="large"
           />
@@ -384,7 +382,31 @@ const departmentManagement = reactive({
 
 // 计算属性：用于树形选择器的数据
 const departmentTreeData = computed(() => {
-  return departmentManagement.departmentTree
+  // 转换为 a-tree-select 期望的格式
+  const transformNode = (node) => {
+    const transformed = {
+      title: node.name, // 显示文本
+      value: node.id, // 值
+      key: `dept_${node.id}`, // 唯一键
+      selectable: true
+    }
+    
+    // 递归处理子节点
+    if (node.children && node.children.length > 0) {
+      transformed.children = node.children.map(transformNode)
+    }
+    
+    return transformed
+  }
+  
+  if (!Array.isArray(departmentManagement.departmentTree)) {
+    console.warn('[UserManagement] departmentTree 不是数组:', departmentManagement.departmentTree)
+    return []
+  }
+  
+  const result = departmentManagement.departmentTree.map(transformNode)
+  console.log('[UserManagement] 转换后的树形数据:', result)
+  return result
 })
 
 // 计算属性：筛选后的用户列表
@@ -423,6 +445,9 @@ const fetchDepartments = async () => {
     const response = await departmentApi.getDepartments()
     // 后端返回格式: { success: true, data: [...] }
     const treeData = response.data || response
+    
+    console.log('[UserManagement] 获取到的部门树数据:', treeData)
+    console.log('[UserManagement] 树形数据数量:', treeData?.length)
     
     // 保存原始树形数据
     departmentManagement.departmentTree = treeData
