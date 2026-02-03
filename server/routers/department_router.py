@@ -67,8 +67,8 @@ class UserDepartmentAdd(BaseModel):
 
 
 @department.get("")
-async def get_departments(current_user: User = Depends(get_admin_user)):
-    """获取所有部门（平铺列表或树形结构）"""
+async def get_departments(current_user: User = Depends(get_required_user)):
+    """获取所有部门（所有登录用户可访问）"""
     service = DepartmentService()
     tree = await service.get_department_tree()
     return {"success": True, "data": tree}
