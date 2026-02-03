@@ -63,7 +63,7 @@ media_types = {
 
 
 @knowledge.get("/databases")
-async def get_databases(current_user: User = Depends(get_current_user)):
+async def get_databases(current_user: User = Depends(get_required_user)):
     """获取所有知识库（根据用户权限过滤）
     
     权限说明：

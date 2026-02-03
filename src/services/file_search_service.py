@@ -53,15 +53,34 @@ class FileSearchService:
             sort_by: 排序字段
             order: 排序方向
         """
-        # 1. 如果没有指定部门，使用用户所属部门
-        if not department_ids:
-            from src.services.user_department_service import UserDepartmentService
-            user_dept_service = UserDepartmentService()
-            user_depts = await user_dept_service.get_user_departments(user_id)
-            department_ids = [d["id"] for d in user_depts]
+        # 1. 处理部门筛选逻辑
+        # 如果指定了部门，则按部门筛选
+        # 如果没有指定部门，则显示用户有权访问的所有知识库文件
+        kb_ids = []
+        
+        if department_ids:
+            # 指定了部门：获取这些部门关联的知识库
+            kb_ids = await self.kb_dept_service.get_kb_ids_by_departments(
+                department_ids,
+                include_subdepts=include_subdepts
+            )
             
-            if not department_ids:
-                logger.warning(f"User {user_id} has no departments")
+            if not kb_ids:
+                logger.info(f"No knowledge bases found for departments {department_ids}")
+                return {
+                    "total": 0,
+                    "page": page,
+                    "page_size": page_size,
+                    "files": [],
+                    "department_stats": {},
+                }
+        else:
+            # 没有指定部门：获取所有知识库，稍后根据用户权限过滤
+            all_databases = await knowledge_base.get_databases()
+            kb_ids = [db.get("db_id") for db in all_databases.get("databases", []) if db.get("db_id")]
+            
+            if not kb_ids:
+                logger.info("No knowledge bases found in the system")
                 return {
                     "total": 0,
                     "page": page,
@@ -70,26 +89,31 @@ class FileSearchService:
                     "department_stats": {},
                 }
         
-        # 2. 获取部门关联的知识库
-        kb_ids = await self.kb_dept_service.get_kb_ids_by_departments(
-            department_ids,
-            include_subdepts=include_subdepts
-        )
-        
-        if not kb_ids:
-            logger.info(f"No knowledge bases found for departments {department_ids}")
-            return {
-                "total": 0,
-                "page": page,
-                "page_size": page_size,
-                "files": [],
-                "department_stats": {},
-            }
-        
-        # 3. 过滤用户无权访问的知识库
+        # 2. 过滤用户无权访问的知识库
         if user_role != "superadmin":
-            denied_kb_ids = await self.access_control_service.get_user_accessible_kb_ids(user_id, user_role)
-            kb_ids = [kb_id for kb_id in kb_ids if kb_id not in denied_kb_ids]
+            # 使用 check_accessible 检查每个知识库的访问权限
+            from src.repositories.knowledge_base_repository import KnowledgeBaseRepository
+            kb_repo = KnowledgeBaseRepository()
+            
+            accessible_kb_ids = []
+            for kb_id in kb_ids:
+                try:
+                    # 构建用户信息
+                    user_info = {
+                        "role": user_role,
+                        "user_id": user_id,
+                        "department_id": None  # 会在 check_accessible 中查询
+                    }
+                    
+                    # 检查访问权限（包含黑名单检查）
+                    can_access = await knowledge_base.check_accessible(user_info, kb_id)
+                    if can_access:
+                        accessible_kb_ids.append(kb_id)
+                except Exception as e:
+                    logger.error(f"Error checking access for kb {kb_id}: {e}")
+                    continue
+            
+            kb_ids = accessible_kb_ids
         
         if not kb_ids:
             logger.info(f"User {user_id} has no accessible knowledge bases")
