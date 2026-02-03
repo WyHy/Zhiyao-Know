@@ -353,6 +353,32 @@ class KnowledgeBaseManager:
                 }
             )
 
+        # 同步创建知识库-部门关联关系
+        accessible_departments = share_config.get("accessible_departments", [])
+        if accessible_departments:
+            from src.storage.postgres.manager import PostgresManager
+            from sqlalchemy import text
+            
+            pg_manager = PostgresManager()
+            pg_manager.initialize()
+            
+            try:
+                async with pg_manager.get_async_session_context() as session:
+                    # 为每个部门创建关联
+                    for dept_id in accessible_departments:
+                        await session.execute(
+                            text("""
+                                INSERT INTO kb_department_relations (kb_id, department_id)
+                                VALUES (:kb_id, :department_id)
+                                ON CONFLICT DO NOTHING
+                            """),
+                            {"kb_id": db_id, "department_id": dept_id}
+                        )
+                    await session.commit()
+                logger.info(f"Created kb_department_relations for {db_id}: {accessible_departments}")
+            except Exception as e:
+                logger.warning(f"Failed to create kb_department_relations for {db_id}: {e}")
+
         logger.info(f"Created {kb_type} database: {database_name} ({db_id}) with {kwargs}")
         db_info["share_config"] = share_config
         return db_info
@@ -364,6 +390,24 @@ class KnowledgeBaseManager:
         try:
             kb_instance = await self._get_kb_for_database(db_id)
             result = await kb_instance.delete_database(db_id)
+
+            # 删除知识库-部门关联关系
+            from src.storage.postgres.manager import PostgresManager
+            from sqlalchemy import text
+            
+            pg_manager = PostgresManager()
+            pg_manager.initialize()
+            
+            try:
+                async with pg_manager.get_async_session_context() as session:
+                    await session.execute(
+                        text("DELETE FROM kb_department_relations WHERE kb_id = :kb_id"),
+                        {"kb_id": db_id}
+                    )
+                    await session.commit()
+                logger.info(f"Removed kb_department_relations for {db_id}")
+            except Exception as e:
+                logger.warning(f"Failed to remove kb_department_relations for {db_id}: {e}")
 
             # 删除数据库记录
             kb_repo = KnowledgeBaseRepository()
@@ -605,6 +649,38 @@ class KnowledgeBaseManager:
         # 保存到数据库
         kb_repo = KnowledgeBaseRepository()
         await kb_repo.update(db_id, update_data)
+
+        # 同步更新知识库-部门关联关系
+        if share_config is not None:
+            accessible_departments = share_config.get("accessible_departments", [])
+            from src.storage.postgres.manager import PostgresManager
+            from sqlalchemy import text
+            
+            pg_manager = PostgresManager()
+            pg_manager.initialize()
+            
+            try:
+                async with pg_manager.get_async_session_context() as session:
+                    # 先删除旧的关联
+                    await session.execute(
+                        text("DELETE FROM kb_department_relations WHERE kb_id = :kb_id"),
+                        {"kb_id": db_id}
+                    )
+                    
+                    # 创建新的关联
+                    for dept_id in accessible_departments:
+                        await session.execute(
+                            text("""
+                                INSERT INTO kb_department_relations (kb_id, department_id)
+                                VALUES (:kb_id, :department_id)
+                                ON CONFLICT DO NOTHING
+                            """),
+                            {"kb_id": db_id, "department_id": dept_id}
+                        )
+                    await session.commit()
+                logger.info(f"Updated kb_department_relations for {db_id}: {accessible_departments}")
+            except Exception as e:
+                logger.warning(f"Failed to update kb_department_relations for {db_id}: {e}")
 
         return await self.get_database_info(db_id)
 
