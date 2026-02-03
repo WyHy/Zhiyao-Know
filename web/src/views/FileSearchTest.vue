@@ -8,6 +8,17 @@
 
     <!-- 搜索和筛选区域 -->
     <div class="search-section">
+      <!-- 当前筛选提示 -->
+      <div v-if="searchParams.department_ids.length > 0" class="current-filter-hint">
+        <span class="hint-icon">ℹ️</span>
+        <span>当前显示: <strong>{{ getDepartmentNames(searchParams.department_ids).join('、') }}</strong> 的文件</span>
+        <span class="hint-action" @click="clearDepartmentFilter">查看所有部门</span>
+      </div>
+      <div v-else class="current-filter-hint">
+        <span class="hint-icon">ℹ️</span>
+        <span>当前显示: <strong>所有部门</strong> 的文件</span>
+      </div>
+      
       <a-row :gutter="16">
         <a-col :span="8">
           <a-input
@@ -254,6 +265,9 @@ import {
 } from '@ant-design/icons-vue'
 import { searchFiles } from '@/apis/fileSearch'
 import { getDepartments } from '@/apis/department_api'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 
 // 搜索参数
 const searchParams = reactive({
@@ -463,6 +477,29 @@ const handleDownload = (file) => {
   // TODO: 实现下载逻辑
 }
 
+// 获取部门名称（根据ID）
+const getDepartmentNames = (deptIds) => {
+  const names = []
+  const findNames = (nodes, ids) => {
+    for (const node of nodes) {
+      if (ids.includes(node.id)) {
+        names.push(node.name)
+      }
+      if (node.children && node.children.length > 0) {
+        findNames(node.children, ids)
+      }
+    }
+  }
+  findNames(departmentManagement.departmentTree, deptIds)
+  return names.length > 0 ? names : ['未知部门']
+}
+
+// 清空部门筛选
+const clearDepartmentFilter = () => {
+  searchParams.department_ids = []
+  handleSearch()
+}
+
 // 获取部门树
 const fetchDepartments = async () => {
   departmentManagement.loading = true
@@ -484,7 +521,18 @@ const fetchDepartments = async () => {
 
 // 组件挂载
 onMounted(async () => {
+  // 1. 获取部门树
   await fetchDepartments()
+  
+  // 2. 设置默认部门为当前用户所属部门
+  if (userStore.departmentId) {
+    searchParams.department_ids = [userStore.departmentId]
+    console.log('[FileSearchTest] 默认部门设置为:', userStore.departmentId, userStore.departmentName)
+  } else {
+    console.log('[FileSearchTest] 用户未设置部门，显示所有文件')
+  }
+  
+  // 3. 执行初始搜索
   await handleSearch()
 })
 </script>
@@ -518,6 +566,39 @@ onMounted(async () => {
     border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     margin-bottom: 16px;
+
+    .current-filter-hint {
+      padding: 8px 12px;
+      background: var(--color-primary-50);
+      border-left: 3px solid var(--color-primary-500);
+      border-radius: 4px;
+      margin-bottom: 16px;
+      font-size: 14px;
+      color: var(--gray-700);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      .hint-icon {
+        font-size: 16px;
+      }
+
+      strong {
+        color: var(--color-primary-700);
+      }
+
+      .hint-action {
+        margin-left: auto;
+        color: var(--color-primary-600);
+        cursor: pointer;
+        font-weight: 500;
+        
+        &:hover {
+          color: var(--color-primary-700);
+          text-decoration: underline;
+        }
+      }
+    }
 
     .advanced-options {
       padding-top: 12px;

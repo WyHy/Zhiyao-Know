@@ -54,6 +54,11 @@ cache
 
 
 *.pdf
+*.docx
+*.xlsx
+*.pptx
+*.ofd
+*.ceb
 src/data
 */package-lock.json
 web/package-lock.json
@@ -66,3 +71,11 @@ docs/vibe
 .cursorrules
 
 /models
+
+### 测试数据目录（保留小的示例文件，忽略大文件）
+test/data/文件汇总/
+test/data/*.txt
+test/data/*.jsonl
+!test/data/lightrag_kb_test_tiny.txt
+!test/data/A_Dream_of_Red_Mansions_tiny.jsonl
+!test/data/complex_graph_test.jsonl
