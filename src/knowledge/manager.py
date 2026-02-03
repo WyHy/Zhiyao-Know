@@ -186,8 +186,15 @@ class KnowledgeBaseManager:
     async def check_accessible(self, user: dict, db_id: str) -> bool:
         """检查用户是否有权限访问数据库
 
+        权限逻辑：
+        1. 超级管理员：可访问所有知识库
+        2. 普通用户：
+           - 默认可以访问所有知识库
+           - 但如果在黑名单中（kb_access_control），则不能访问
+           - 如果知识库设置了部门限制（is_shared=false），则需要检查部门权限
+
         Args:
-            user: 用户信息字典
+            user: 用户信息字典（包含 role, user_id, department_id）
             db_id: 数据库ID
 
         Returns:
@@ -198,7 +205,21 @@ class KnowledgeBaseManager:
             return True
 
         from src.repositories.knowledge_base_repository import KnowledgeBaseRepository
+        from src.services.kb_access_control_service import KBAccessControlService
 
+        # 1. 检查黑名单（优先级最高）
+        user_id = user.get("user_id")
+        if user_id:
+            access_control = KBAccessControlService()
+            can_access = await access_control.can_user_access_kb(
+                user_id=user_id,
+                kb_id=db_id,
+                user_role=user.get("role", "user")
+            )
+            if not can_access:
+                return False
+
+        # 2. 检查知识库的共享配置
         kb_repo = KnowledgeBaseRepository()
         kb = await kb_repo.get_by_id(db_id)
         if kb is None:
@@ -207,11 +228,11 @@ class KnowledgeBaseManager:
         share_config = kb.share_config or {}
         is_shared = share_config.get("is_shared", True)
 
-        # 如果是全员共享，则有权限
+        # 如果是全员共享，则有权限（前提是不在黑名单中）
         if is_shared:
             return True
 
-        # 检查部门权限
+        # 如果不是全员共享，检查部门权限
         user_department_id = user.get("department_id")
         accessible_departments = share_config.get("accessible_departments", [])
 
