@@ -5,8 +5,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import text
-
+from src import knowledge_base
 from src.services.kb_access_control_service import KBAccessControlService
 from src.services.user_department_service import KBDepartmentService
 from src.storage.postgres.manager import PostgresManager
@@ -102,200 +101,159 @@ class FileSearchService:
                 "department_stats": {},
             }
         
-        # 4. 构建文件查询
-        async with self.db.get_async_session_context() as session:
-            # 构建基础查询
-            query_parts = ["""
-                SELECT 
-                    f.id,
-                    f.file_id,
-                    f.kb_id,
-                    f.filename,
-                    f.file_path,
-                    f.file_size,
-                    f.file_type,
-                    f.status,
-                    f.title,
-                    f.summary,
-                    f.tags,
-                    f.created_at,
-                    f.updated_at,
-                    f.created_by,
-                    u.username as created_by_name
-                FROM kb_files f
-                LEFT JOIN users u ON f.created_by = u.id
-                WHERE f.kb_id = ANY(:kb_ids)
-                  AND f.status = 'indexed'
-            """]
-            
-            params = {"kb_ids": kb_ids}
-            
-            # 添加关键词过滤（全文检索）
-            if keyword:
-                query_parts.append("""
-                    AND to_tsvector('simple', 
-                        COALESCE(f.filename, '') || ' ' || 
-                        COALESCE(f.title, '') || ' ' || 
-                        COALESCE(f.summary, '')
-                    ) @@ plainto_tsquery('simple', :keyword)
-                """)
-                params["keyword"] = keyword
-            
-            # 添加文件类型过滤
-            if file_types:
-                query_parts.append("AND f.file_type = ANY(:file_types)")
-                params["file_types"] = file_types
-            
-            # 添加时间范围
-            if date_from:
-                query_parts.append("AND f.created_at >= :date_from")
-                params["date_from"] = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
-            if date_to:
-                query_parts.append("AND f.created_at <= :date_to")
-                params["date_to"] = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
-            
-            # 查询总数
-            count_query = "SELECT COUNT(*) FROM kb_files f WHERE f.kb_id = ANY(:kb_ids) AND f.status = 'indexed'"
-            if keyword:
-                count_query += """ AND to_tsvector('simple', 
-                    COALESCE(f.filename, '') || ' ' || 
-                    COALESCE(f.title, '') || ' ' || 
-                    COALESCE(f.summary, '')
-                ) @@ plainto_tsquery('simple', :keyword)"""
-            if file_types:
-                count_query += " AND f.file_type = ANY(:file_types)"
-            if date_from:
-                count_query += " AND f.created_at >= :date_from"
-            if date_to:
-                count_query += " AND f.created_at <= :date_to"
-            
-            count_result = await session.execute(text(count_query), params)
-            total = count_result.fetchone()[0]
-            
-            # 添加排序和分页
-            valid_sort_fields = ["created_at", "filename", "file_size", "updated_at"]
-            if sort_by not in valid_sort_fields:
-                sort_by = "created_at"
-            
-            order = "DESC" if order.lower() == "desc" else "ASC"
-            query_parts.append(f"ORDER BY f.{sort_by} {order}")
-            query_parts.append("LIMIT :limit OFFSET :offset")
-            
-            params["limit"] = page_size
-            params["offset"] = (page - 1) * page_size
-            
-            # 执行查询
-            result = await session.execute(text(" ".join(query_parts)), params)
-            
-            files = [
-                {
-                    "id": row[0],
-                    "file_id": row[1],
-                    "kb_id": row[2],
-                    "filename": row[3],
-                    "file_path": row[4],
-                    "file_size": row[5],
-                    "file_type": row[6],
-                    "status": row[7],
-                    "title": row[8],
-                    "summary": row[9],
-                    "tags": row[10] or [],
-                    "created_at": str(row[11]),
-                    "updated_at": str(row[12]),
-                    "created_by": row[13],
-                    "created_by_name": row[14],
-                    "download_url": f"/api/files/{row[1]}/download",
-                }
-                for row in result.fetchall()
+        # 4. 从知识库中获取所有文件
+        all_files = []
+        kb_name_map = {}  # 用于记录知识库名称
+        
+        for kb_id in kb_ids:
+            try:
+                db_info = await knowledge_base.get_database_info(kb_id)
+                if not db_info:
+                    continue
+                
+                kb_name_map[kb_id] = db_info.get("name", "")
+                files = db_info.get("files", {})
+                
+                for file_id, file_info in files.items():
+                    # 只包含状态为 indexed 或 done 的文件
+                    file_status = file_info.get("status", "")
+                    if file_status not in ["indexed", "done"]:
+                        continue
+                    
+                    file_data = {
+                        "file_id": file_id,
+                        "kb_id": kb_id,
+                        "kb_name": db_info.get("name", ""),
+                        "filename": file_info.get("filename", ""),
+                        "file_path": file_info.get("path", ""),
+                        "file_size": 0,  # 知识库元数据中没有文件大小
+                        "file_type": file_info.get("type", "").lower(),
+                        "status": file_status,
+                        "created_at": file_info.get("created_at", ""),
+                        "updated_at": file_info.get("created_at", ""),
+                        "download_url": f"/api/knowledge/files/{file_id}/download",
+                    }
+                    all_files.append(file_data)
+            except Exception as e:
+                logger.error(f"Error fetching files from kb {kb_id}: {e}")
+                continue
+        
+        # 5. 应用筛选条件
+        filtered_files = all_files
+        
+        # 关键词筛选
+        if keyword:
+            keyword_lower = keyword.lower()
+            filtered_files = [
+                f for f in filtered_files
+                if keyword_lower in f["filename"].lower()
             ]
-            
-            # 查询部门统计
-            dept_stats = await self._get_department_stats(session, kb_ids, department_ids)
-            
-            return {
-                "total": total,
-                "page": page,
-                "page_size": page_size,
-                "files": files,
-                "department_stats": dept_stats,
-            }
+        
+        # 文件类型筛选
+        if file_types:
+            file_types_lower = [ft.lower() for ft in file_types]
+            filtered_files = [
+                f for f in filtered_files
+                if f["file_type"] in file_types_lower
+            ]
+        
+        # 时间范围筛选
+        if date_from:
+            try:
+                date_from_dt = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+                filtered_files = [
+                    f for f in filtered_files
+                    if f["created_at"] and datetime.fromisoformat(
+                        f["created_at"].replace("Z", "+00:00")
+                    ) >= date_from_dt
+                ]
+            except Exception as e:
+                logger.warning(f"Invalid date_from format: {date_from}, {e}")
+        
+        if date_to:
+            try:
+                date_to_dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+                filtered_files = [
+                    f for f in filtered_files
+                    if f["created_at"] and datetime.fromisoformat(
+                        f["created_at"].replace("Z", "+00:00")
+                    ) <= date_to_dt
+                ]
+            except Exception as e:
+                logger.warning(f"Invalid date_to format: {date_to}, {e}")
+        
+        # 6. 排序
+        valid_sort_fields = ["created_at", "filename", "file_size", "updated_at"]
+        if sort_by not in valid_sort_fields:
+            sort_by = "created_at"
+        
+        reverse = order.lower() == "desc"
+        
+        try:
+            if sort_by == "filename":
+                filtered_files.sort(key=lambda x: x["filename"], reverse=reverse)
+            elif sort_by == "file_size":
+                filtered_files.sort(key=lambda x: x["file_size"] or 0, reverse=reverse)
+            else:  # created_at or updated_at
+                filtered_files.sort(
+                    key=lambda x: x.get(sort_by, "") or "",
+                    reverse=reverse
+                )
+        except Exception as e:
+            logger.warning(f"Sort error: {e}")
+        
+        # 7. 分页
+        total = len(filtered_files)
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_files = filtered_files[start:end]
+        
+        # 8. 获取部门统计
+        dept_stats = await self._get_department_stats_from_kb(kb_ids, department_ids)
+        
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "files": page_files,
+            "department_stats": dept_stats,
+        }
 
-    async def _get_department_stats(self, session, kb_ids: list[str], dept_ids: list[int] | None) -> dict[int, int]:
-        """获取各部门的文件数统计"""
+    async def _get_department_stats_from_kb(self, kb_ids: list[str], dept_ids: list[int] | None) -> dict[int, int]:
+        """从知识库获取各部门的文件数统计"""
         if not dept_ids:
             return {}
         
-        result = await session.execute(
-            text("""
-                SELECT kdr.department_id, COUNT(DISTINCT f.id) as file_count
-                FROM kb_files f
-                JOIN kb_department_relations kdr ON f.kb_id = kdr.kb_id
-                WHERE f.kb_id = ANY(:kb_ids) 
-                  AND kdr.department_id = ANY(:dept_ids)
-                  AND f.status = 'indexed'
-                GROUP BY kdr.department_id
-            """),
-            {"kb_ids": kb_ids, "dept_ids": dept_ids}
-        )
+        # 统计每个部门关联的知识库中的文件数
+        dept_file_counts = {dept_id: 0 for dept_id in dept_ids}
         
-        return {row[0]: row[1] for row in result.fetchall()}
-
-    async def sync_file_to_db(
-        self,
-        file_id: str,
-        kb_id: str,
-        filename: str,
-        file_path: str | None = None,
-        file_size: int | None = None,
-        file_type: str | None = None,
-        status: str = "uploaded",
-        created_by: int | None = None,
-    ) -> dict[str, Any]:
-        """
-        同步文件信息到数据库（供知识库上传时调用）
-        
-        Args:
-            file_id: 文件唯一标识
-            kb_id: 所属知识库
-            filename: 文件名
-            file_path: MinIO路径
-            file_size: 文件大小
-            file_type: 文件类型
-            status: 状态
-            created_by: 创建人
-        """
+        # 获取部门-知识库关联
         async with self.db.get_async_session_context() as session:
-            await session.execute(
+            from sqlalchemy import text
+            result = await session.execute(
                 text("""
-                    INSERT INTO kb_files (file_id, kb_id, filename, file_path, file_size, file_type, status, created_by)
-                    VALUES (:file_id, :kb_id, :filename, :file_path, :file_size, :file_type, :status, :created_by)
-                    ON CONFLICT (file_id) 
-                    DO UPDATE SET 
-                        status = EXCLUDED.status,
-                        updated_at = NOW()
+                    SELECT department_id, kb_id
+                    FROM kb_department_relations
+                    WHERE department_id = ANY(:dept_ids)
+                      AND kb_id = ANY(:kb_ids)
                 """),
-                {
-                    "file_id": file_id,
-                    "kb_id": kb_id,
-                    "filename": filename,
-                    "file_path": file_path,
-                    "file_size": file_size,
-                    "file_type": file_type,
-                    "status": status,
-                    "created_by": created_by,
-                }
+                {"dept_ids": dept_ids, "kb_ids": kb_ids}
             )
-            await session.commit()
-            
-            logger.debug(f"Synced file to db: {file_id}")
-            
-            return {"file_id": file_id, "status": status}
-
-    async def update_file_status(self, file_id: str, status: str):
-        """更新文件状态"""
-        async with self.db.get_async_session_context() as session:
-            await session.execute(
-                text("UPDATE kb_files SET status = :status, updated_at = NOW() WHERE file_id = :file_id"),
-                {"file_id": file_id, "status": status}
-            )
-            await session.commit()
+            dept_kb_relations = result.fetchall()
+        
+        # 为每个部门统计文件数
+        for dept_id, kb_id in dept_kb_relations:
+            try:
+                db_info = await knowledge_base.get_database_info(kb_id)
+                if db_info:
+                    files = db_info.get("files", {})
+                    # 只统计 status='indexed' 或 'done' 的文件
+                    file_count = sum(
+                        1 for f in files.values()
+                        if f.get("status") in ["indexed", "done"]
+                    )
+                    dept_file_counts[dept_id] += file_count
+            except Exception as e:
+                logger.error(f"Error counting files for dept {dept_id}, kb {kb_id}: {e}")
+        
+        return dept_file_counts

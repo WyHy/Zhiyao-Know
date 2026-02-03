@@ -78,6 +78,19 @@ const router = createRouter({
       ]
     },
     {
+      path: '/file-search-test',
+      name: 'fileSearchTest',
+      component: AppLayout,
+      children: [
+        {
+          path: '',
+          name: 'FileSearchTestComp',
+          component: () => import('../views/FileSearchTest.vue'),
+          meta: { keepAlive: false, requiresAuth: true, requiresAdmin: true }
+        }
+      ]
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',
       component: () => import('../views/EmptyView.vue'),
