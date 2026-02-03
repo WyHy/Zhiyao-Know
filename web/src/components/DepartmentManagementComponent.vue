@@ -71,7 +71,7 @@
                       size="small"
                       danger
                       @click="confirmDeleteDepartment(record)"
-                      :disabled="record.user_count > 0"
+                      :disabled="record.user_count > 0 || record.hasChildren"
                       class="action-btn"
                     >
                       <DeleteOutlined />
@@ -248,6 +248,7 @@ const handleExpand = (expanded, record) => {
 const departmentManagement = reactive({
   loading: false,
   departments: [],
+  departmentTree: [], // 存储原始树形数据
   error: null,
   modalVisible: false,
   modalTitle: '添加部门',
@@ -255,19 +256,74 @@ const departmentManagement = reactive({
   editDepartmentId: null,
   form: {
     name: '',
-    description: '',
     parent_id: null,
+    description: '',
     sort_order: 0
   }
 })
+
+// 计算属性：用于树形选择器的数据
+const departmentTreeData = computed(() => {
+  // 如果是编辑模式，需要过滤掉当前部门及其子部门（避免循环引用）
+  if (departmentManagement.editMode && departmentManagement.editDepartmentId) {
+    return filterDepartmentTree(
+      departmentManagement.departmentTree,
+      departmentManagement.editDepartmentId
+    )
+  }
+  return departmentManagement.departmentTree
+})
+
+// 过滤部门树，排除指定部门及其子部门
+const filterDepartmentTree = (tree, excludeId) => {
+  return tree
+    .filter((node) => node.id !== excludeId)
+    .map((node) => ({
+      ...node,
+      children: node.children ? filterDepartmentTree(node.children, excludeId) : []
+    }))
+}
+
+
+// 将树形结构扁平化为列表
+const flattenDepartmentTree = (tree, level = 0) => {
+  const result = []
+  
+  tree.forEach((node) => {
+    // 添加当前节点，带层级信息
+    result.push({
+      ...node,
+      displayLevel: level,
+      hasChildren: node.children && node.children.length > 0
+    })
+    
+    // 递归处理子节点
+    if (node.children && node.children.length > 0) {
+      const childNodes = flattenDepartmentTree(node.children, level + 1)
+      result.push(...childNodes)
+    }
+  })
+  
+  return result
+}
 
 // 获取部门列表
 const fetchDepartments = async () => {
   try {
     departmentManagement.loading = true
     departmentManagement.error = null
-    const departments = await departmentApi.getDepartments()
-    departmentManagement.departments = departments
+    const response = await departmentApi.getDepartments()
+    
+    // 后端返回格式: { success: true, data: [...] }
+    const treeData = response.data || response
+    
+    // 保存原始树形数据（用于父部门选择器）
+    departmentManagement.departmentTree = treeData
+    
+    // 将树形结构扁平化（用于表格显示）
+    const flatDepartments = flattenDepartmentTree(treeData)
+    
+    departmentManagement.departments = flatDepartments
   } catch (error) {
     console.error('获取部门列表失败:', error)
     departmentManagement.error = '获取部门列表失败'
@@ -283,8 +339,8 @@ const showAddDepartmentModal = () => {
   departmentManagement.editDepartmentId = null
   departmentManagement.form = {
     name: '',
-    description: '',
     parent_id: null,
+    description: '',
     sort_order: 0
   }
   departmentManagement.modalVisible = true
@@ -297,13 +353,12 @@ const showEditDepartmentModal = (department) => {
   departmentManagement.editDepartmentId = department.id
   departmentManagement.form = {
     name: department.name,
-    description: department.description || '',
     parent_id: department.parent_id,
+    description: department.description || '',
     sort_order: department.sort_order || 0
   }
   departmentManagement.modalVisible = true
 }
-
 
 // 处理部门表单提交
 const handleDepartmentFormSubmit = async () => {

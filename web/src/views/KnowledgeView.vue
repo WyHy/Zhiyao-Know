@@ -19,7 +19,7 @@
           v-model:value="searchParams.department_ids"
           placeholder="选择部门"
           size="large"
-          multiple
+          :multiple="true"
           tree-checkable
           :tree-data="departmentTreeData"
           :maxTagCount="2"
@@ -27,6 +27,7 @@
           :dropdown-style="{ maxHeight: '400px', overflow: 'auto' }"
           tree-default-expand-all
           show-checked-strategy="SHOW_ALL"
+          @change="handleDepartmentSelectChange"
         />
         <a-select
           v-model:value="searchParams.file_types"
@@ -87,17 +88,33 @@
 
     <!-- 文件列表表格 -->
     <div class="file-list-container">
-      <a-table
-        :columns="columns"
-        :data-source="fileList"
-        row-key="file_id"
-        class="knowledge-table"
-        size="small"
-        :pagination="tablePagination"
-        @change="handleTableChange"
-        :loading="loading"
-        :locale="{ emptyText: '暂无文件数据' }"
-      >
+      <!-- 左侧部门树 -->
+      <div class="department-tree-sidebar" :class="{ disabled: isMultiSelectMode }">
+        <div class="sidebar-header">部门</div>
+        <a-tree
+          :tree-data="departmentTreeDataForTree"
+          :selected-keys="selectedDepartmentKeys"
+          :expanded-keys="expandedKeys"
+          :block-node="true"
+          @select="handleTreeSelect"
+          @expand="handleTreeExpand"
+          :disabled="isMultiSelectMode"
+          class="department-tree"
+        />
+      </div>
+      <!-- 右侧表格 -->
+      <div class="table-wrapper">
+        <a-table
+          :columns="columns"
+          :data-source="fileList"
+          row-key="file_id"
+          class="knowledge-table"
+          size="small"
+          :pagination="tablePagination"
+          @change="handleTableChange"
+          :loading="loading"
+          :locale="{ emptyText: '暂无文件数据' }"
+        >
         <template #bodyCell="{ column, record }">
           <div v-if="column.key === 'filename'">
             <a-button
@@ -169,6 +186,7 @@
           </div>
         </template>
       </a-table>
+      </div>
     </div>
 
     <!-- 文件详情弹窗 -->
@@ -221,6 +239,26 @@ const departmentTreeData = computed(() => {
     }))
   }
   return transformData(departmentList.value)
+})
+// 部门树形数据（用于左侧 Tree 组件）
+const departmentTreeDataForTree = computed(() => {
+  const transformData = (nodes) => {
+    return nodes.map(node => ({
+      title: node.name,
+      key: node.id,
+      value: node.id,
+      children: node.children && node.children.length > 0 ? transformData(node.children) : undefined
+    }))
+  }
+  return transformData(departmentList.value)
+})
+// 左侧树选中的部门（单选）
+const selectedDepartmentKeys = ref([])
+// 左侧树展开的节点
+const expandedKeys = ref([])
+// 是否是多选模式（上方下拉框选择了多个部门）
+const isMultiSelectMode = computed(() => {
+  return Array.isArray(searchParams.value.department_ids) && searchParams.value.department_ids.length > 1
 })
 const loading = ref(false)
 
@@ -325,9 +363,14 @@ const loadDepartments = async () => {
     // 保持树形结构
     departmentList.value = list
     
-    // 如果用户有部门ID，设置为默认选中值
+    // 如果用户有部门ID，设置为默认选中值并展开
     if (userStore.departmentId && searchParams.value.department_ids.length === 0) {
       searchParams.value.department_ids = [userStore.departmentId]
+      selectedDepartmentKeys.value = [userStore.departmentId]
+      // 延迟展开，确保树数据已加载
+      setTimeout(() => {
+        expandToNode(userStore.departmentId)
+      }, 100)
     }
     
     console.log('处理后的部门列表:', departmentList.value)
@@ -340,9 +383,14 @@ const loadDepartments = async () => {
         name: userStore.departmentName,
         children: []
       }]
-      // 设置默认选中值
+      // 设置默认选中值并展开
       if (searchParams.value.department_ids.length === 0) {
         searchParams.value.department_ids = [userStore.departmentId]
+        selectedDepartmentKeys.value = [userStore.departmentId]
+        // 延迟展开，确保树数据已加载
+        setTimeout(() => {
+          expandToNode(userStore.departmentId)
+        }, 100)
       }
     }
   }
@@ -410,6 +458,73 @@ const handleTableChange = (pag) => {
   handleSearch()
 }
 
+// 查找节点的所有父节点ID
+const findParentKeys = (treeData, targetId, parentKeys = []) => {
+  for (const node of treeData) {
+    if (node.key === targetId) {
+      return parentKeys
+    }
+    if (node.children && node.children.length > 0) {
+      const found = findParentKeys(node.children, targetId, [...parentKeys, node.key])
+      if (found !== null) {
+        return found
+      }
+    }
+  }
+  return null
+}
+
+// 展开到指定节点
+const expandToNode = (nodeId) => {
+  const parentKeys = findParentKeys(departmentTreeDataForTree.value, nodeId)
+  if (parentKeys) {
+    expandedKeys.value = [...new Set([...expandedKeys.value, ...parentKeys])]
+  }
+}
+
+// 处理左侧树展开
+const handleTreeExpand = (keys) => {
+  expandedKeys.value = keys
+}
+
+// 处理左侧树选择（单选）
+const handleTreeSelect = (selectedKeys) => {
+  if (isMultiSelectMode.value) {
+    // 多选模式下，左侧树被禁用，不处理选择
+    return
+  }
+  
+  if (selectedKeys && selectedKeys.length > 0) {
+    const selectedId = selectedKeys[0]
+    selectedDepartmentKeys.value = selectedKeys
+    // 展开到选中的节点
+    expandToNode(selectedId)
+    // 更新上方下拉框为单选模式
+    searchParams.value.department_ids = [selectedId]
+    // 触发搜索
+    handleSearch()
+  } else {
+    selectedDepartmentKeys.value = []
+    searchParams.value.department_ids = []
+  }
+}
+
+// 处理上方下拉框变化
+const handleDepartmentSelectChange = (value) => {
+  // 如果选择了多个部门，清空左侧树的选中状态
+  if (Array.isArray(value) && value.length > 1) {
+    selectedDepartmentKeys.value = []
+    expandedKeys.value = []
+  } else if (Array.isArray(value) && value.length === 1) {
+    // 如果只选择了一个部门，更新左侧树的选中状态并展开
+    selectedDepartmentKeys.value = [value[0]]
+    expandToNode(value[0])
+  } else {
+    selectedDepartmentKeys.value = []
+    expandedKeys.value = []
+  }
+}
+
 // 下载文件
 const handleDownloadFile = async (record) => {
   try {
@@ -471,6 +586,13 @@ onMounted(async () => {
   }
   
   await loadDepartments()
+  
+  // 初始化时同步左侧树选中状态并展开
+  if (Array.isArray(searchParams.value.department_ids) && searchParams.value.department_ids.length === 1) {
+    selectedDepartmentKeys.value = [searchParams.value.department_ids[0]]
+    expandToNode(searchParams.value.department_ids[0])
+  }
+  
   // 默认加载一次
   await handleSearch()
 })
@@ -565,8 +687,93 @@ onMounted(async () => {
   flex: 1;
   overflow: hidden;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   margin-top: 16px;
+  gap: 16px;
+}
+
+.department-tree-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--gray-50);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-y: auto;
+  border: 1px solid var(--gray-150);
+  transition: all 0.3s ease;
+
+  &.disabled {
+    opacity: 0.6;
+    pointer-events: none;
+    background: var(--gray-100);
+    
+    .sidebar-header {
+      color: var(--gray-400);
+    }
+    
+    :deep(.ant-tree-title) {
+      color: var(--gray-400) !important;
+    }
+    
+    :deep(.ant-tree-node-content-wrapper) {
+      color: var(--gray-400) !important;
+    }
+  }
+
+  .sidebar-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--gray-900);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--gray-200);
+  }
+
+  .department-tree {
+    :deep(.ant-tree-node-selected) {
+      background-color: var(--main-5);
+    }
+
+    :deep(.ant-tree-node-content-wrapper) {
+      border-radius: 4px;
+      padding: 4px 8px;
+      padding-right: 16px;
+      margin-right: 8px;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background-color: var(--gray-100);
+      }
+    }
+
+    :deep(.ant-tree-node-selected .ant-tree-node-content-wrapper) {
+      background-color: var(--main-5);
+      color: var(--main-color);
+      padding-right: 16px;
+      margin-right: 8px;
+    }
+
+    :deep(.ant-tree-node-content-wrapper:hover) {
+      background-color: var(--gray-100);
+    }
+
+    :deep(.ant-tree-title) {
+      color: var(--gray-900);
+      font-size: 14px;
+    }
+
+    :deep(.ant-tree-treenode) {
+      margin-bottom: 2px;
+    }
+  }
+}
+
+.table-wrapper {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .knowledge-table {
