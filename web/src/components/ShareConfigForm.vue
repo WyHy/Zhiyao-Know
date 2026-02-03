@@ -10,15 +10,20 @@
       <p class="share-hint">
         {{ config.is_shared ? '所有用户都可以访问' : '只有指定部门的用户可以访问' }}
       </p>
-      <!-- 部门选择 -->
+      <!-- 部门选择 - 改用树形选择器 -->
       <div v-if="!config.is_shared" class="dept-selection">
-        <a-select
+        <a-tree-select
           v-model:value="config.accessible_department_ids"
-          mode="multiple"
+          :tree-data="departmentTreeData"
+          tree-checkable
+          :show-checked-strategy="SHOW_PARENT"
           placeholder="请选择可访问的部门"
           style="width: 100%"
-          :options="departmentOptions"
+          :tree-default-expand-all="false"
+          :max-tag-count="3"
+          allow-clear
         />
+        <p class="dept-hint">支持选择多个部门，包含子部门会自动包含</p>
       </div>
     </div>
   </div>
@@ -26,11 +31,14 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { TreeSelect } from 'ant-design-vue'
 import { useUserStore } from '@/stores/user'
-import { departmentApi } from '@/apis/department_api'
+import { getDepartments } from '@/apis/department_api'
+
+const SHOW_PARENT = TreeSelect.SHOW_PARENT
 
 const userStore = useUserStore()
-const departments = ref([])
+const departmentTree = ref([])
 
 const props = defineProps({
   modelValue: {
@@ -95,13 +103,45 @@ watch(
   }
 )
 
+// 递归构建树形数据
+const buildTreeData = (nodes) => {
+  return nodes.map((node) => ({
+    title: node.name,
+    value: node.id,
+    key: node.id,
+    children: node.children && node.children.length > 0 ? buildTreeData(node.children) : undefined
+  }))
+}
+
+// 部门树形数据
+const departmentTreeData = computed(() => {
+  if (!departmentTree.value || departmentTree.value.length === 0) {
+    return []
+  }
+  return buildTreeData(departmentTree.value)
+})
+
+// 获取所有部门ID（扁平化）
+const getAllDepartmentIds = (tree) => {
+  const ids = []
+  const traverse = (nodes) => {
+    nodes.forEach((node) => {
+      ids.push(node.id)
+      if (node.children && node.children.length > 0) {
+        traverse(node.children)
+      }
+    })
+  }
+  traverse(tree)
+  return ids
+}
+
 // 尝试自动选中用户所在部门
 const tryAutoSelectUserDept = () => {
   const userDeptId = userStore.departmentId
   if (userDeptId) {
-    const deptExists = departments.value.find((d) => d.id === userDeptId)
-    if (deptExists) {
-      // 确保存储为数字类型（a-select 返回的是字符串）
+    const allDeptIds = getAllDepartmentIds(departmentTree.value)
+    if (allDeptIds.includes(userDeptId)) {
       config.accessible_department_ids = [Number(userDeptId)]
     }
   }
@@ -122,19 +162,13 @@ watch(
   }
 )
 
-// 部门选项
-const departmentOptions = computed(() =>
-  departments.value.map((dept) => ({
-    label: dept.name,
-    value: Number(dept.id)
-  }))
-)
-
-// 加载部门列表
+// 加载部门树
 const loadDepartments = async () => {
   try {
-    const res = await departmentApi.getDepartments()
-    departments.value = res.departments || res || []
+    const res = await getDepartments()
+    // getDepartments 返回的是 { data: [...树形结构] }
+    departmentTree.value = res.data || []
+    console.log('[ShareConfigForm] 加载部门树:', departmentTree.value)
 
     // 如果需要，自动选中用户所在部门
     if (
@@ -146,7 +180,7 @@ const loadDepartments = async () => {
     }
   } catch (e) {
     console.error('加载部门列表失败:', e)
-    departments.value = []
+    departmentTree.value = []
   }
 }
 
@@ -216,6 +250,12 @@ defineExpose({
 
     .dept-selection {
       margin-top: 12px;
+
+      .dept-hint {
+        font-size: 12px;
+        color: var(--gray-500);
+        margin: 6px 0 0 0;
+      }
     }
   }
 }
