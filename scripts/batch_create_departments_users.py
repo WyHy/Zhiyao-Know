@@ -192,6 +192,29 @@ class BatchCreator:
         
         print(f"✅ 登录成功! Token: {self.token[:20]}...\n")
     
+    async def load_existing_departments(self):
+        """加载已存在的部门ID映射"""
+        print("📋 加载现有部门...")
+        
+        response = await self.client.get("/departments")
+        
+        if response.status_code == 200:
+            result = response.json()
+            departments = result.get("data", [])
+            
+            # 递归处理部门树
+            def process_dept(dept):
+                self.dept_id_map[dept["name"]] = dept["id"]
+                for child in dept.get("children", []):
+                    process_dept(child)
+            
+            for dept in departments:
+                process_dept(dept)
+            
+            print(f"✅ 加载了 {len(self.dept_id_map)} 个部门\n")
+        else:
+            print(f"⚠️  加载部门失败: {response.text}\n")
+    
     async def create_department_tree(self, dept_data, parent_id=None, level=1):
         """递归创建部门树"""
         indent = "  " * (level - 1)
@@ -237,7 +260,7 @@ class BatchCreator:
         print(f"✅ 部门创建完成! 共创建 {len(self.dept_id_map)} 个部门\n")
     
     async def create_user(self, user_data):
-        """创建单个用户"""
+        """创建单个用户或为已存在用户分配部门"""
         # 创建用户
         create_data = {
             "username": user_data["username"],
@@ -247,18 +270,37 @@ class BatchCreator:
             "phone_number": user_data.get("phone"),
         }
         
-        print(f"👤 创建用户: {user_data['username']} ({user_data['user_id']})")
+        print(f"👤 处理用户: {user_data['username']} ({user_data['user_id']})")
         
         response = await self.client.post("/auth/users", json=create_data)
+        user_id = None
+        user_exists = False
         
-        if response.status_code not in [200, 201]:
+        if response.status_code in [200, 201]:
+            result = response.json()
+            user_id = result["id"]
+            print(f"   ✅ 用户创建成功! ID: {user_id}")
+        elif "已存在" in response.text or "exists" in response.text.lower():
+            # 用户已存在，获取用户ID
+            user_exists = True
+            print(f"   ℹ️  用户已存在，正在获取用户信息...")
+            
+            # 获取用户列表查找该用户
+            list_response = await self.client.get("/auth/users")
+            if list_response.status_code == 200:
+                users = list_response.json()
+                for user in users:
+                    if user.get("user_id") == user_data["user_id"]:
+                        user_id = user["id"]
+                        print(f"   ✅ 找到用户! ID: {user_id}")
+                        break
+            
+            if not user_id:
+                print(f"   ❌ 无法获取用户ID，跳过部门分配")
+                return None, False
+        else:
             print(f"   ❌ 创建失败: {response.text}")
-            return None
-        
-        result = response.json()
-        user_id = result["id"]
-        
-        print(f"   ✅ 用户创建成功! ID: {user_id}")
+            return None, False
         
         # 分配部门
         dept_names = user_data.get("departments", [])
@@ -273,32 +315,52 @@ class BatchCreator:
                     "primary_id": primary_id,
                 }
                 
+                dept_names_str = ", ".join(dept_names)
+                action = "更新" if user_exists else "分配"
+                print(f"   📋 {action}部门: {dept_names_str}")
+                
                 response = await self.client.post(
                     f"/departments/{user_id}/departments",
                     json=assign_data
                 )
                 
                 if response.status_code == 200:
-                    dept_names_str = ", ".join(dept_names)
-                    print(f"   ✅ 分配部门: {dept_names_str}")
+                    print(f"   ✅ {action}部门成功")
                 else:
-                    print(f"   ⚠️  分配部门失败: {response.text}")
+                    print(f"   ⚠️  {action}部门失败: {response.text}")
+            else:
+                print(f"   ⚠️  未找到部门映射: {dept_names}")
+        else:
+            print(f"   ℹ️  无需分配部门")
         
-        return user_id
+        return user_id, user_exists
     
     async def create_all_users(self):
         """创建所有用户"""
         print("=" * 60)
-        print("👥 开始创建用户\n")
+        print("👥 开始创建/更新用户\n")
         
-        success_count = 0
+        created_count = 0
+        updated_count = 0
+        failed_count = 0
+        
         for user_data in USERS_DATA:
-            user_id = await self.create_user(user_data)
-            if user_id:
-                success_count += 1
+            result = await self.create_user(user_data)
+            if result[0]:  # user_id 存在
+                if result[1]:  # user_exists
+                    updated_count += 1
+                else:
+                    created_count += 1
+            else:
+                failed_count += 1
             print()  # 空行分隔
         
-        print(f"✅ 用户创建完成! 成功创建 {success_count}/{len(USERS_DATA)} 个用户\n")
+        print(f"✅ 用户处理完成!")
+        print(f"   新创建: {created_count} 个")
+        print(f"   已更新: {updated_count} 个")
+        if failed_count > 0:
+            print(f"   失败: {failed_count} 个")
+        print()
     
     async def show_summary(self):
         """显示汇总信息"""
@@ -343,13 +405,16 @@ async def main():
         # 1. 登录
         await creator.login()
         
-        # 2. 创建部门
+        # 2. 加载已有部门（重要！）
+        await creator.load_existing_departments()
+        
+        # 3. 创建部门（如果不存在）
         await creator.create_all_departments()
         
-        # 3. 创建用户
+        # 4. 创建/更新用户
         await creator.create_all_users()
         
-        # 4. 显示汇总
+        # 5. 显示汇总
         await creator.show_summary()
         
     except Exception as e:
