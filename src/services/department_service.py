@@ -37,6 +37,18 @@ class DepartmentService:
         """
         async with self.db.get_async_session_context() as session:
             try:
+                # 检查同名部门（同一父部门下不允许同名）
+                duplicate_check = await session.execute(
+                    text("""
+                        SELECT id FROM departments 
+                        WHERE name = :name AND parent_id IS NOT DISTINCT FROM :parent_id
+                    """),
+                    {"name": name, "parent_id": parent_id}
+                )
+                if duplicate_check.fetchone():
+                    parent_name = "根目录" if parent_id is None else f"部门ID {parent_id}"
+                    raise ValueError(f"部门名称 '{name}' 在 {parent_name} 下已存在，不允许重复")
+                
                 # 计算层级和路径
                 level = 1
                 path = None
@@ -117,7 +129,7 @@ class DepartmentService:
                 raise
 
     async def get_department_tree(self) -> list[dict[str, Any]]:
-        """获取完整部门树（包含用户数量）"""
+        """获取完整部门树（包含用户数量，递归统计子部门）"""
         async with self.db.get_async_session_context() as session:
             # 查询所有部门
             result = await session.execute(
@@ -159,7 +171,31 @@ class DepartmentService:
             for dept in departments:
                 dept["user_count"] = user_counts.get(dept["id"], 0)
             
-            return self._build_tree(departments)
+            # 构建树形结构
+            tree = self._build_tree(departments)
+            
+            # 递归计算总用户数（包含子部门）
+            self._calculate_total_user_count(tree)
+            
+            return tree
+
+    def _calculate_total_user_count(self, departments: list[dict]) -> int:
+        """递归计算部门的总用户数（包含所有子部门）"""
+        total = 0
+        for dept in departments:
+            # 本部门用户数
+            dept_count = dept.get("user_count", 0)
+            
+            # 递归计算子部门用户数
+            if dept.get("children"):
+                children_count = self._calculate_total_user_count(dept["children"])
+                dept_count += children_count
+            
+            # 更新部门的总用户数
+            dept["user_count"] = dept_count
+            total += dept_count
+        
+        return total
 
     def _build_tree(self, departments: list[dict]) -> list[dict]:
         """构建树形结构"""
