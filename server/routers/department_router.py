@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from src.services.department_service import DepartmentService
 from src.services.user_department_service import UserDepartmentService
 from src.storage.postgres.models_business import User
-from server.utils.auth_middleware import get_superadmin_user, get_admin_user, get_current_user
+from server.utils.auth_middleware import get_superadmin_user, get_admin_user, get_current_user, get_required_user
 from server.utils.common_utils import log_operation
 
 # 创建路由器
@@ -75,8 +75,8 @@ async def get_departments(current_user: User = Depends(get_admin_user)):
 
 
 @department.get("/tree")
-async def get_department_tree(current_user: User = Depends(get_current_user)):
-    """获取部门树（所有用户可访问）"""
+async def get_department_tree(current_user: User = Depends(get_required_user)):
+    """获取部门树（所有登录用户可访问）"""
     service = DepartmentService()
     tree = await service.get_department_tree()
     return {"success": True, "data": tree}
@@ -85,9 +85,9 @@ async def get_department_tree(current_user: User = Depends(get_current_user)):
 @department.get("/{department_id}")
 async def get_department_with_children(
     department_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_required_user)
 ):
-    """获取部门及其所有子部门"""
+    """获取部门及其所有子部门（所有登录用户可访问）"""
     service = DepartmentService()
     departments = await service.get_department_with_descendants(department_id)
     
