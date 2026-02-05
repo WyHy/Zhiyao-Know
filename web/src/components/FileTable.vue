@@ -1,7 +1,7 @@
 <template>
   <div class="file-table-container">
     <div class="panel-header">
-      <!-- 左侧：搜索 -->
+      <!-- 左侧：搜索和部门选择 -->
       <div class="panel-actions-right">
         <a-input
           v-model:value="filenameFilter"
@@ -16,8 +16,8 @@
           </template>
         </a-input>
       </div>
-      <!-- 右侧：上传、新建和刷新 -->
-      <div class="upload-btn-group">
+      <!-- 右侧：上传、新建和刷新（只读模式下隐藏） -->
+      <div v-if="!props.readonlyMode" class="upload-btn-group">
         <a-dropdown trigger="click">
           <a-button type="primary" size="small" class="upload-btn">
             <FileUp size="14" style="margin-left: 4px" />
@@ -40,13 +40,6 @@
               >
                 上传文件夹
               </a-menu-item>
-              <!-- <a-menu-item
-                key="upload-url"
-                @click="showAddFilesModal({ mode: 'url' })"
-                :icon="h(Link, { size: 16 })"
-              >
-                解析 URL
-              </a-menu-item> -->
             </a-menu>
           </template>
         </a-dropdown>
@@ -61,6 +54,17 @@
           <template #icon><FolderPlus size="16" /></template>
         </a-button>
 
+        <a-button
+          type="text"
+          @click="handleRefresh"
+          :loading="refreshing"
+          title="刷新"
+          class="panel-action-btn"
+        >
+          <template #icon><RotateCw size="16" /></template>
+        </a-button>
+      </div>
+      <div v-else class="upload-btn-group">
         <a-button
           type="text"
           @click="handleRefresh"
@@ -102,7 +106,7 @@
         </a-button> -->
     </div>
 
-    <div class="batch-actions">
+    <div v-if="!props.readonlyMode" class="batch-actions">
       <div class="batch-info">
         <a-checkbox
           :checked="isAllSelected"
@@ -113,25 +117,6 @@
         <span>{{ selectedRowKeys.length }} 项</span>
       </div>
       <div style="display: flex; gap: 2px">
-        <!-- 隐藏批量解析和批量入库 -->
-        <!-- <a-button
-          type="link"
-          @click="handleBatchParse"
-          :loading="batchParsing"
-          :disabled="!canBatchParse"
-          :icon="h(FileText, { size: 16 })"
-        >
-          批量解析
-        </a-button>
-        <a-button
-          type="link"
-          @click="handleBatchIndex"
-          :loading="batchIndexing"
-          :disabled="!canBatchIndex"
-          :icon="h(Database, { size: 16 })"
-        >
-          批量入库
-        </a-button> -->
         <a-button
           type="link"
           danger
@@ -309,7 +294,24 @@
         </div>
 
         <div v-else-if="column.key === 'action'" class="table-row-actions">
+          <template v-if="props.readonlyMode">
+            <!-- 只读模式：只显示下载按钮 -->
+            <a-button
+              v-if="!record.is_folder"
+              type="text"
+              @click="handleDownloadFile(record)"
+              :disabled="
+                lock ||
+                record.file_type === 'url' ||
+                !['done', 'indexed', 'parsed', 'error_indexing'].includes(record.status)
+              "
+              title="下载文件"
+            >
+              <template #icon><component :is="h(Download)" size="16" /></template>
+            </a-button>
+          </template>
           <a-popover
+            v-else
             placement="bottomRight"
             trigger="click"
             overlayClassName="file-action-popover"
@@ -353,29 +355,6 @@
                     <template #icon><component :is="h(FileText)" size="14" /></template>
                     {{ record.status === 'error_parsing' ? '重试解析' : '解析文件' }}
                   </a-button>
-
-                  <!-- 隐藏入库相关按钮 -->
-                  <!-- <a-button
-                    v-if="record.status === 'parsed' || record.status === 'error_indexing'"
-                    type="text"
-                    block
-                    @click="handleIndexFile(record)"
-                    :disabled="lock"
-                  >
-                    <template #icon><component :is="h(Database)" size="14" /></template>
-                    {{ record.status === 'error_indexing' ? '重试入库' : '入库' }}
-                  </a-button>
-
-                  <a-button
-                    v-if="!isLightRAG && (record.status === 'done' || record.status === 'indexed')"
-                    type="text"
-                    block
-                    @click="handleReindexFile(record)"
-                    :disabled="lock"
-                  >
-                    <template #icon><component :is="h(RotateCw)" size="14" /></template>
-                    重新入库
-                  </a-button> -->
 
                   <a-button
                     type="text"
@@ -479,13 +458,29 @@ const getStatusText = (status) => {
 }
 
 const props = defineProps({
+  databaseId: {
+    type: String,
+    required: false
+  },
   rightPanelVisible: {
     type: Boolean,
     default: true
+  },
+  readonlyMode: {
+    type: Boolean,
+    default: false
   }
 })
 
 const emit = defineEmits(['showAddFilesModal', 'toggleRightPanel'])
+
+// 设置当前知识库ID（如果传入了 databaseId prop）
+watch(() => props.databaseId, (newId) => {
+  if (newId && newId !== store.databaseId) {
+    store.databaseId = newId
+    store.getDatabaseInfo(newId)
+  }
+}, { immediate: true })
 
 const files = computed(() => Object.values(store.database.files || {}))
 const isLightRAG = computed(() => store.database?.kb_type?.toLowerCase() === 'lightrag')
@@ -1108,7 +1103,7 @@ const handleDeleteFolder = (record) => {
     onOk: async () => {
       try {
         await store.deleteFile(record.file_id)
-        message.success('删除成功')
+        // 删除成功提示已在 store 中处理
       } catch (error) {
         // Error handled in store but we can add extra handling if needed
       }

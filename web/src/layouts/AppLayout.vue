@@ -1,12 +1,13 @@
 <script setup>
-import { ref, reactive, onMounted, computed, provide } from 'vue'
+import { ref, reactive, onMounted, computed, provide, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck, Folder } from 'lucide-vue-next'
+import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck, Folder, FileSearch, MessageCircle, FileText, Database, FileCheck } from 'lucide-vue-next'
 
 import { useConfigStore } from '@/stores/config'
 import { useDatabaseStore } from '@/stores/database'
 import { useInfoStore } from '@/stores/info'
 import { useTaskerStore } from '@/stores/tasker'
+import { useUserStore } from '@/stores/user'
 import { storeToRefs } from 'pinia'
 import UserInfoComponent from '@/components/UserInfoComponent.vue'
 import DebugComponent from '@/components/DebugComponent.vue'
@@ -17,6 +18,7 @@ const configStore = useConfigStore()
 const databaseStore = useDatabaseStore()
 const infoStore = useInfoStore()
 const taskerStore = useTaskerStore()
+const userStore = useUserStore()
 const { activeCount: activeCountRef, isDrawerOpen } = storeToRefs(taskerStore)
 
 const layoutSettings = reactive({
@@ -47,7 +49,13 @@ const getRemoteConfig = () => {
 }
 
 const getRemoteDatabase = () => {
-  databaseStore.loadDatabases()
+  // 只有管理员才需要加载知识库列表
+  if (userStore.isAdmin) {
+    databaseStore.loadDatabases().catch((error) => {
+      // 静默处理错误，避免普通用户看到权限错误提示
+      console.error('加载知识库列表失败:', error)
+    })
+  }
 }
 
 // GitHub stars fetch removed
@@ -68,34 +76,88 @@ console.log(route)
 
 const activeTaskCount = computed(() => activeCountRef.value || 0)
 
-// 下面是导航菜单部分，只保留知识库
-const mainList = [
-  {
-    name: '知识库',
-    path: '/database',
-    icon: Folder,
-    activeIcon: Folder
-  }
-  // 其他菜单暂时注释
-  // {
-  //   name: '智能体',
-  //   path: '/agent',
-  //   icon: Bot,
-  //   activeIcon: Bot
-  // },
-  // {
-  //   name: '图谱',
-  //   path: '/graph',
-  //   icon: Waypoints,
-  //   activeIcon: Waypoints
-  // },
-  // {
-  //   name: 'Dashboard',
-  //   path: '/dashboard',
-  //   icon: BarChart3,
-  //   activeIcon: BarChart3
+// 下面是导航菜单部分
+const mainList = computed(() => {
+  const isAdmin = userStore.isAdmin
+  const list = []
+  
+  // // 智能体菜单（仅管理员可见）
+  // if (isAdmin) {
+  //   list.push({
+  //     name: '智能体',
+  //     path: '/agent',
+  //     icon: Bot,
+  //     activeIcon: Bot,
+  //     hidden: false
+  //   })
   // }
-]
+  
+  // // 知识图谱菜单（仅管理员可见）
+  // if (isAdmin) {
+  //   list.push({
+  //     name: '知识图谱',
+  //     path: '/graph',
+  //     icon: Waypoints,
+  //     activeIcon: Waypoints,
+  //     hidden: false
+  //   })
+  // }
+  
+  // 对话菜单（所有用户可见）
+  if (isAdmin) {
+    list.push({
+      name: '对话',
+      path: '/chat',
+      icon: MessageCircle,
+      activeIcon: MessageCircle,
+      hidden: false
+    })
+  }
+  
+  // 知识库菜单（所有用户可见）
+  list.push({
+    name: '知识库',
+    path: '/knowledge',
+    icon: FileSearch,
+    activeIcon: FileSearch,
+    hidden: false
+  })
+  
+  // 知识库管理菜单（仅管理员可见）
+  if (isAdmin) {
+    list.push({
+      name: '知识库管理',
+      path: '/database',
+      icon: Folder,
+      activeIcon: Folder,
+      hidden: false
+    })
+  }
+  
+  // 数据采集菜单（仅管理员可见）
+  if (isAdmin) {
+    list.push({
+      name: '数据采集',
+      path: '/data-collection/monitoring-config',
+      icon: Database,
+      activeIcon: Database,
+      hidden: false
+    })
+  }
+  
+  // // 仪表板菜单（仅管理员可见）
+  // if (isAdmin) {
+  //   list.push({
+  //     name: '仪表板',
+  //     path: '/dashboard',
+  //     icon: BarChart3,
+  //     activeIcon: BarChart3,
+  //     hidden: false
+  //   })
+  // }
+  
+  return list
+})
 
 // Provide settings modal methods to child components
 provide('settingsModal', {
@@ -117,12 +179,12 @@ provide('settingsModal', {
           :to="item.path"
           v-show="!item.hidden"
           class="nav-item"
-          active-class="active"
+          :class="{ active: route.path === item.path || route.path.startsWith(item.path + '/') }"
         >
           <div class="nav-item-content">
             <component
               class="icon"
-              :is="route.path.startsWith(item.path) ? item.activeIcon : item.icon"
+              :is="route.path === item.path || route.path.startsWith(item.path + '/') ? item.activeIcon : item.icon"
               size="22"
             />
             <span class="nav-item-text">{{ item.name }}</span>
@@ -250,6 +312,10 @@ div.header,
     }
   }
 
+  .nav-item-wrapper {
+    width: 100%;
+  }
+
   .nav-item {
     display: flex;
     align-items: center;
@@ -270,6 +336,16 @@ div.header,
     cursor: pointer;
     outline: none;
 
+    &.has-children {
+      cursor: pointer;
+    }
+
+    .nav-item-link {
+      width: 100%;
+      text-decoration: none;
+      color: inherit;
+    }
+
     .nav-item-content {
       display: flex;
       flex-direction: row;
@@ -278,6 +354,17 @@ div.header,
       gap: 8px;
       width: 100%;
       padding: 0 8px;
+
+      .submenu-arrow {
+        margin-left: auto;
+        font-size: 10px;
+        transition: transform 0.2s;
+        color: #8c8c8c;
+
+        &.expanded {
+          transform: rotate(180deg);
+        }
+      }
     }
 
     .nav-item-text {
@@ -319,6 +406,10 @@ div.header,
       .nav-item-text {
         color: var(--main-color);
       }
+    }
+
+    &.has-children.active {
+      background-color: rgba(0, 0, 0, 0.05);
     }
 
     &.github {
@@ -389,6 +480,40 @@ div.header,
       width: 100%;
       justify-content: flex-start;
       padding: 8px;
+    }
+  }
+
+  .submenu {
+    margin-left: 24px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+
+    .submenu-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      text-decoration: none;
+      color: #666;
+      font-size: 12px;
+      transition: all 0.2s;
+      margin: 2px 4px;
+
+      .submenu-item-text {
+        font-size: 12px;
+      }
+
+      &.active {
+        background-color: rgba(24, 144, 255, 0.1);
+        color: var(--main-color);
+        font-weight: 500;
+      }
+
+      &:hover {
+        background-color: rgba(0, 0, 0, 0.03);
+        color: var(--main-color);
+      }
     }
   }
 }

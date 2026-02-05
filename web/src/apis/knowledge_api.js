@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut, apiDelete, apiRequest } from './base'
+import { apiAdminGet, apiAdminPost, apiAdminPut, apiAdminDelete, apiRequest, apiGet, apiPost } from './base'
 
 /**
  * 知识库管理API模块
@@ -15,7 +15,7 @@ export const databaseApi = {
    * @returns {Promise} - 知识库列表
    */
   getDatabases: async () => {
-    return apiGet('/api/knowledge/databases')
+    return apiAdminGet('/api/knowledge/databases')
   },
 
   /**
@@ -24,7 +24,7 @@ export const databaseApi = {
    * @returns {Promise} - 创建结果
    */
   createDatabase: async (databaseData) => {
-    return apiPost('/api/knowledge/databases', databaseData)
+    return apiAdminPost('/api/knowledge/databases', databaseData)
   },
 
   /**
@@ -33,7 +33,7 @@ export const databaseApi = {
    * @returns {Promise} - 知识库信息
    */
   getDatabaseInfo: async (dbId) => {
-    return apiGet(`/api/knowledge/databases/${dbId}`)
+    return apiAdminGet(`/api/knowledge/databases/${dbId}`)
   },
 
   /**
@@ -43,7 +43,7 @@ export const databaseApi = {
    * @returns {Promise} - 更新结果
    */
   updateDatabase: async (dbId, updateData) => {
-    return apiPut(`/api/knowledge/databases/${dbId}`, updateData)
+    return apiAdminPut(`/api/knowledge/databases/${dbId}`, updateData)
   },
 
   /**
@@ -52,7 +52,7 @@ export const databaseApi = {
    * @returns {Promise} - 删除结果
    */
   deleteDatabase: async (dbId) => {
-    return apiDelete(`/api/knowledge/databases/${dbId}`)
+    return apiAdminDelete(`/api/knowledge/databases/${dbId}`)
   },
 
   /**
@@ -63,7 +63,7 @@ export const databaseApi = {
    * @returns {Promise} - 生成结果
    */
   generateDescription: async (name, currentDescription = '', fileList = []) => {
-    return apiPost('/api/knowledge/generate-description', {
+    return apiAdminPost('/api/knowledge/generate-description', {
       name,
       current_description: currentDescription,
       file_list: fileList
@@ -75,7 +75,7 @@ export const databaseApi = {
    * @returns {Promise} - 可访问的知识库列表
    */
   getAccessibleDatabases: async () => {
-    return apiGet('/api/knowledge/databases/accessible')
+    return apiAdminGet('/api/knowledge/databases/accessible')
   }
 }
 
@@ -92,7 +92,7 @@ export const documentApi = {
    * @returns {Promise} - 创建结果
    */
   createFolder: async (dbId, folderName, parentId = null) => {
-    return apiPost(`/api/knowledge/databases/${dbId}/folders`, {
+    return apiAdminPost(`/api/knowledge/databases/${dbId}/folders`, {
       folder_name: folderName,
       parent_id: parentId
     })
@@ -106,7 +106,7 @@ export const documentApi = {
    * @returns {Promise} - 移动结果
    */
   moveDocument: async (dbId, docId, newParentId) => {
-    return apiPut(`/api/knowledge/databases/${dbId}/documents/${docId}/move`, {
+    return apiAdminPut(`/api/knowledge/databases/${dbId}/documents/${docId}/move`, {
       new_parent_id: newParentId
     })
   },
@@ -119,7 +119,7 @@ export const documentApi = {
    * @returns {Promise} - 添加结果
    */
   addDocuments: async (dbId, items, params = {}) => {
-    return apiPost(`/api/knowledge/databases/${dbId}/documents`, {
+    return apiAdminPost(`/api/knowledge/databases/${dbId}/documents`, {
       items,
       params
     })
@@ -132,7 +132,7 @@ export const documentApi = {
    * @returns {Promise} - 文档信息
    */
   getDocumentInfo: async (dbId, docId) => {
-    return apiGet(`/api/knowledge/databases/${dbId}/documents/${docId}`)
+    return apiAdminGet(`/api/knowledge/databases/${dbId}/documents/${docId}`)
   },
 
   /**
@@ -142,7 +142,7 @@ export const documentApi = {
    * @returns {Promise} - 删除结果
    */
   deleteDocument: async (dbId, docId) => {
-    return apiDelete(`/api/knowledge/databases/${dbId}/documents/${docId}`)
+    return apiAdminDelete(`/api/knowledge/databases/${dbId}/documents/${docId}`)
   },
 
   /**
@@ -152,7 +152,7 @@ export const documentApi = {
    * @returns {Promise} - Response对象
    */
   downloadDocument: async (dbId, docId) => {
-    return apiGet(`/api/knowledge/databases/${dbId}/documents/${docId}/download`, {}, 'blob')
+    return apiAdminGet(`/api/knowledge/databases/${dbId}/documents/${docId}/download`, {}, 'blob')
   },
 
   /**
@@ -162,7 +162,7 @@ export const documentApi = {
    * @returns {Promise} - 解析任务结果
    */
   parseDocuments: async (dbId, fileIds) => {
-    return apiPost(`/api/knowledge/databases/${dbId}/documents/parse`, fileIds)
+    return apiAdminPost(`/api/knowledge/databases/${dbId}/documents/parse`, fileIds)
   },
 
   /**
@@ -173,7 +173,7 @@ export const documentApi = {
    * @returns {Promise} - 入库任务结果
    */
   indexDocuments: async (dbId, fileIds, params = {}) => {
-    return apiPost(`/api/knowledge/databases/${dbId}/documents/index`, {
+    return apiAdminPost(`/api/knowledge/databases/${dbId}/documents/index`, {
       file_ids: fileIds,
       params
     })
@@ -193,7 +193,7 @@ export const queryApi = {
    * @returns {Promise} - 查询结果
    */
   queryKnowledgeBase: async (dbId, query, meta = {}) => {
-    return apiPost(`/api/knowledge/databases/${dbId}/query`, {
+    return apiAdminPost(`/api/knowledge/databases/${dbId}/query`, {
       query,
       meta
     })
@@ -207,7 +207,7 @@ export const queryApi = {
    * @returns {Promise} - 测试结果
    */
   queryTest: async (dbId, query, meta = {}) => {
-    return apiPost(`/api/knowledge/databases/${dbId}/query-test`, {
+    return apiAdminPost(`/api/knowledge/databases/${dbId}/query-test`, {
       query,
       meta
     })
@@ -219,7 +219,7 @@ export const queryApi = {
    * @returns {Promise} - 查询参数
    */
   getKnowledgeBaseQueryParams: async (dbId) => {
-    return apiGet(`/api/knowledge/databases/${dbId}/query-params`)
+    return apiAdminGet(`/api/knowledge/databases/${dbId}/query-params`)
   },
 
   /**
@@ -229,7 +229,7 @@ export const queryApi = {
    * @returns {Promise} - 更新结果
    */
   updateKnowledgeBaseQueryParams: async (dbId, params) => {
-    return apiPut(`/api/knowledge/databases/${dbId}/query-params`, params)
+    return apiAdminPut(`/api/knowledge/databases/${dbId}/query-params`, params)
   },
 
   /**
@@ -239,7 +239,7 @@ export const queryApi = {
    * @returns {Promise} - 生成的问题列表
    */
   generateSampleQuestions: async (dbId, count = 10) => {
-    return apiPost(`/api/knowledge/databases/${dbId}/sample-questions`, {
+    return apiAdminPost(`/api/knowledge/databases/${dbId}/sample-questions`, {
       count
     })
   },
@@ -250,7 +250,7 @@ export const queryApi = {
    * @returns {Promise} - 问题列表
    */
   getSampleQuestions: async (dbId) => {
-    return apiGet(`/api/knowledge/databases/${dbId}/sample-questions`)
+    return apiAdminGet(`/api/knowledge/databases/${dbId}/sample-questions`)
   }
 }
 
@@ -260,13 +260,22 @@ export const queryApi = {
 
 export const fileApi = {
   /**
+   * 搜索文件
+   * @param {Object} params - 搜索参数
+   * @returns {Promise} - 搜索结果
+   */
+  searchFiles: async (params) => {
+    return apiPost('/api/files/search', params, {}, true, 'json')
+  },
+
+  /**
    * 抓取 URL 内容
    * @param {string} url - 目标 URL
    * @param {string} dbId - 知识库 ID
    * @returns {Promise} - 抓取结果
    */
   fetchUrl: async (url, dbId = null) => {
-    return apiPost('/api/knowledge/files/fetch-url', {
+    return apiAdminPost('/api/knowledge/files/fetch-url', {
       url,
       db_id: dbId
     })
@@ -284,7 +293,7 @@ export const fileApi = {
 
     const url = dbId ? `/api/knowledge/files/upload?db_id=${dbId}` : '/api/knowledge/files/upload'
 
-    return apiPost(url, formData, {
+    return apiAdminPost(url, formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
@@ -296,7 +305,7 @@ export const fileApi = {
    * @returns {Promise} - 文件类型列表
    */
   getSupportedFileTypes: async () => {
-    return apiGet('/api/knowledge/files/supported-types')
+    return apiAdminGet('/api/knowledge/files/supported-types')
   },
 
   /**
@@ -331,7 +340,7 @@ export const fileApi = {
    * @returns {Promise} - 处理任务结果
    */
   processFolder: async ({ file_path, db_id, content_hash }) => {
-    return apiPost('/api/knowledge/files/process-folder', {
+    return apiAdminPost('/api/knowledge/files/process-folder', {
       file_path,
       db_id,
       content_hash
@@ -349,7 +358,7 @@ export const typeApi = {
    * @returns {Promise} - 知识库类型列表
    */
   getKnowledgeBaseTypes: async () => {
-    return apiGet('/api/knowledge/types')
+    return apiAdminGet('/api/knowledge/types')
   },
 
   /**
@@ -357,7 +366,7 @@ export const typeApi = {
    * @returns {Promise} - 统计信息
    */
   getStatistics: async () => {
-    return apiGet('/api/knowledge/stats')
+    return apiAdminGet('/api/knowledge/stats')
   }
 }
 
@@ -372,7 +381,7 @@ export const embeddingApi = {
    * @returns {Promise} - 模型状态
    */
   getModelStatus: async (modelId) => {
-    return apiGet(`/api/knowledge/embedding-models/${modelId}/status`)
+    return apiAdminGet(`/api/knowledge/embedding-models/${modelId}/status`)
   },
 
   /**
@@ -380,7 +389,7 @@ export const embeddingApi = {
    * @returns {Promise} - 所有模型状态
    */
   getAllModelsStatus: async () => {
-    return apiGet('/api/knowledge/embedding-models/status')
+    return apiAdminGet('/api/knowledge/embedding-models/status')
   }
 }
 
@@ -410,8 +419,8 @@ export const evaluationApi = {
     console.log('file type:', file ? file.type : 'undefined')
     console.log('file name:', file ? file.name : 'undefined')
 
-    // 直接传递 FormData，apiPost 会正确处理
-    return apiPost(`/api/evaluation/databases/${dbId}/benchmarks/upload`, formData)
+    // 直接传递 FormData，apiAdminPost 会正确处理
+    return apiAdminPost(`/api/evaluation/databases/${dbId}/benchmarks/upload`, formData)
   },
 
   /**
@@ -420,7 +429,7 @@ export const evaluationApi = {
    * @returns {Promise} - 基准列表
    */
   getBenchmarks: async (dbId) => {
-    return apiGet(`/api/evaluation/databases/${dbId}/benchmarks`)
+    return apiAdminGet(`/api/evaluation/databases/${dbId}/benchmarks`)
   },
 
   /**
@@ -429,7 +438,7 @@ export const evaluationApi = {
    * @returns {Promise} - 基准详情
    */
   getBenchmark: async (benchmarkId) => {
-    return apiGet(`/api/evaluation/benchmarks/${benchmarkId}`)
+    return apiAdminGet(`/api/evaluation/benchmarks/${benchmarkId}`)
   },
   /**
    * 获取评估基准详情（带db_id）
@@ -441,7 +450,7 @@ export const evaluationApi = {
       page: page.toString(),
       page_size: pageSize.toString()
     })
-    return apiGet(`/api/evaluation/databases/${dbId}/benchmarks/${benchmarkId}?${params}`)
+    return apiAdminGet(`/api/evaluation/databases/${dbId}/benchmarks/${benchmarkId}?${params}`)
   },
 
   /**
@@ -450,7 +459,7 @@ export const evaluationApi = {
    * @returns {Promise} - 删除结果
    */
   deleteBenchmark: async (benchmarkId) => {
-    return apiDelete(`/api/evaluation/benchmarks/${benchmarkId}`)
+    return apiAdminDelete(`/api/evaluation/benchmarks/${benchmarkId}`)
   },
 
   /**
@@ -463,7 +472,7 @@ export const evaluationApi = {
    * @returns {Promise} - 生成结果
    */
   generateBenchmark: async (dbId, params) => {
-    return apiPost(`/api/evaluation/databases/${dbId}/benchmarks/generate`, params)
+    return apiAdminPost(`/api/evaluation/databases/${dbId}/benchmarks/generate`, params)
   },
 
   /**
@@ -475,7 +484,7 @@ export const evaluationApi = {
    * @returns {Promise} - 评估任务ID
    */
   runEvaluation: async (dbId, params) => {
-    return apiPost(`/api/evaluation/databases/${dbId}/run`, params)
+    return apiAdminPost(`/api/evaluation/databases/${dbId}/run`, params)
   },
 
   /**
@@ -485,7 +494,7 @@ export const evaluationApi = {
    */
   getEvaluationResults: async (taskId) => {
     // 已废弃：请改用 getEvaluationResultsByDb
-    return apiGet(`/api/evaluation/${taskId}/results`)
+    return apiAdminGet(`/api/evaluation/${taskId}/results`)
   },
 
   /**
@@ -495,7 +504,7 @@ export const evaluationApi = {
    */
   deleteEvaluationResult: async (taskId) => {
     // 已废弃：请改用 deleteEvaluationResultByDb
-    return apiDelete(`/api/evaluation/${taskId}`)
+    return apiAdminDelete(`/api/evaluation/${taskId}`)
   },
 
   // 新接口：带 db_id 的评估结果查询与删除
@@ -507,10 +516,10 @@ export const evaluationApi = {
     if (params.errorOnly !== undefined) queryParams.append('error_only', params.errorOnly)
 
     const url = `/api/evaluation/databases/${dbId}/results/${taskId}${queryParams.toString() ? '?' + queryParams.toString() : ''}`
-    return apiGet(url)
+    return apiAdminGet(url)
   },
   deleteEvaluationResultByDb: async (dbId, taskId) => {
-    return apiDelete(`/api/evaluation/databases/${dbId}/results/${taskId}`)
+    return apiAdminDelete(`/api/evaluation/databases/${dbId}/results/${taskId}`)
   },
 
   /**
@@ -519,6 +528,6 @@ export const evaluationApi = {
    * @returns {Promise} - 评估历史列表
    */
   getEvaluationHistory: async (dbId) => {
-    return apiGet(`/api/evaluation/databases/${dbId}/history`)
+    return apiAdminGet(`/api/evaluation/databases/${dbId}/history`)
   }
 }

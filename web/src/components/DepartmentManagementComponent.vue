@@ -33,20 +33,18 @@
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'name'">
                 <div class="department-name">
-                  <!-- 层级缩进 -->
-                  <span
-                    v-for="i in record.displayLevel"
-                    :key="'indent-' + i"
-                    class="level-indent"
-                  ></span>
-                  <!-- 层级指示器 -->
-                  <span v-if="record.displayLevel > 0" class="level-indicator">└─</span>
-                  <!-- 部门名称 -->
-                  <span class="name-text">{{ record.name }}</span>
-                  <!-- 层级标签 -->
-                  <a-tag v-if="record.level" :color="getLevelColor(record.level)" size="small" class="level-tag">
+                  <span 
+                    v-if="record.children && record.children.length > 0"
+                    class="expand-icon"
+                    @click="toggleExpand(record.id)"
+                  >
+                    {{ expandedRowKeys.includes(record.id) ? '−' : '+' }}
+                  </span>
+                  <span v-else class="expand-icon-placeholder"></span>
+                  <a-tag :color="getLevelColor(record.level)" class="level-tag">
                     L{{ record.level }}
                   </a-tag>
+                  <span class="name-text">{{ record.name }}</span>
                 </div>
               </template>
               <template v-if="column.key === 'description'">
@@ -104,14 +102,12 @@
     >
       <a-form layout="vertical" class="department-form">
         <a-form-item label="上级部门" class="form-item">
-          <a-tree-select
+          <a-select
             v-model:value="departmentManagement.form.parent_id"
-            :tree-data="departmentTreeData"
             placeholder="请选择上级部门（可选，不选则为顶级部门）"
-            allow-clear
-            :field-names="{ label: 'name', value: 'id', children: 'children' }"
-            tree-default-expand-all
             size="large"
+            allow-clear
+            :options="parentDepartmentOptions"
           />
           <div class="help-text">不选择则创建为顶级部门</div>
         </a-form-item>
@@ -138,10 +134,9 @@
         <a-form-item label="排序顺序" class="form-item">
           <a-input-number
             v-model:value="departmentManagement.form.sort_order"
-            placeholder="数字越小越靠前"
-            :min="0"
-            :max="9999"
+            placeholder="排序顺序"
             size="large"
+            :min="0"
             style="width: 100%"
           />
           <div class="help-text">同级部门按此值排序，数字越小越靠前</div>
@@ -152,7 +147,7 @@
 </template>
 
 <script setup>
-import { reactive, onMounted, computed, ref } from 'vue'
+import { reactive, onMounted, watch, computed, ref } from 'vue'
 import { notification, Modal } from 'ant-design-vue'
 import { departmentApi } from '@/apis'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
@@ -289,6 +284,7 @@ const filterDepartmentTree = (tree, excludeId) => {
     }))
 }
 
+
 // 将树形结构扁平化为列表
 const flattenDepartmentTree = (tree, level = 0) => {
   const result = []
@@ -389,20 +385,11 @@ const handleDepartmentFormSubmit = async () => {
 
     if (departmentManagement.editMode) {
       // 更新部门
-      await departmentApi.updateDepartment(departmentManagement.editDepartmentId, {
-        name: departmentManagement.form.name.trim(),
-        description: departmentManagement.form.description.trim() || null,
-        sort_order: departmentManagement.form.sort_order
-      })
+      await departmentApi.updateDepartment(departmentManagement.editDepartmentId, formData)
       notification.success({ message: '部门更新成功' })
     } else {
       // 创建部门
-      await departmentApi.createDepartment({
-        name: departmentManagement.form.name.trim(),
-        parent_id: departmentManagement.form.parent_id || null,
-        description: departmentManagement.form.description.trim() || null,
-        sort_order: departmentManagement.form.sort_order
-      })
+      await departmentApi.createDepartment(formData)
       notification.success({ message: '部门创建成功' })
     }
 
@@ -500,33 +487,40 @@ onMounted(() => {
         padding: 8px 12px;
       }
 
-      .department-name {
-        display: flex;
-        align-items: center;
-        
-        .level-indent {
-          display: inline-block;
-          width: 24px;
-        }
-        
-        .level-indicator {
-          color: var(--gray-400);
-          margin-right: 8px;
-          font-size: 12px;
-        }
-        
-        .name-text {
-          font-weight: 500;
-          color: var(--gray-900);
-        }
-        
-        .level-tag {
-          margin-left: 8px;
-          font-size: 11px;
-          padding: 0 6px;
-          line-height: 18px;
+    .department-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      .expand-icon {
+        cursor: pointer;
+        width: 20px;
+        text-align: center;
+        font-weight: bold;
+        color: var(--gray-600);
+        user-select: none;
+        font-size: 16px;
+        line-height: 1;
+
+        &:hover {
+          color: var(--main-color);
         }
       }
+
+      .expand-icon-placeholder {
+        width: 20px;
+      }
+
+      .level-tag {
+        margin: 0;
+        font-size: 12px;
+      }
+
+      .name-text {
+        font-weight: 500;
+        color: var(--gray-900);
+      }
+    }
 
       .description-text {
         color: var(--gray-600);

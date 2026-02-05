@@ -54,13 +54,13 @@ const router = createRouter({
           path: '',
           name: 'DatabaseComp',
           component: () => import('../views/DataBaseView.vue'),
-          meta: { keepAlive: true, requiresAuth: true }  // 移除 requiresAdmin
+          meta: { keepAlive: true, requiresAuth: true, requiresAdmin: true }
         },
         {
           path: ':database_id',
           name: 'DatabaseInfoComp',
           component: () => import('../views/DataBaseInfoView.vue'),
-          meta: { keepAlive: false, requiresAuth: true }  // 移除 requiresAdmin
+          meta: { keepAlive: false, requiresAuth: true, requiresAdmin: true }
         }
       ]
     },
@@ -85,8 +85,46 @@ const router = createRouter({
         {
           path: '',
           name: 'KnowledgeComp',
-          component: () => import('../views/FileSearchTest.vue'),
+          component: () => import('../views/KnowledgeView.vue'),
           meta: { keepAlive: true, requiresAuth: true }
+        }
+      ]
+    },
+    {
+      path: '/chat',
+      name: 'chat',
+      component: AppLayout,
+      children: [
+        {
+          path: '',
+          name: 'ChatComp',
+          component: () => import('../views/ChatView.vue'),
+          meta: { keepAlive: true, requiresAuth: true }
+        }
+      ]
+    },
+    {
+      path: '/data-collection',
+      name: 'data-collection',
+      component: AppLayout,
+      children: [
+        {
+          path: 'monitoring-config',
+          name: 'MonitoringConfig',
+          component: () => import('../views/DataCollectionView.vue'),
+          meta: { keepAlive: true, requiresAuth: true, requiresAdmin: true }
+        },
+        {
+          path: 'data-extraction',
+          name: 'DataExtraction',
+          component: () => import('../views/DataCollectionView.vue'),
+          meta: { keepAlive: true, requiresAuth: true, requiresAdmin: true }
+        },
+        {
+          path: 'log-management',
+          name: 'LogManagement',
+          component: () => import('../views/DataCollectionView.vue'),
+          meta: { keepAlive: true, requiresAuth: true, requiresAdmin: true }
         }
       ]
     },

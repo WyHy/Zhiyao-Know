@@ -35,7 +35,7 @@
           />
         </div>
         <div class="auto-index-toggle">
-          <a-checkbox v-model:checked="autoIndex">上传后自动入库</a-checkbox>
+          <!-- <a-checkbox v-model:checked="autoIndex">上传后自动入库</a-checkbox> -->
         </div>
       </div>
 
@@ -560,7 +560,7 @@ const chunkParams = ref({
 })
 
 // 自动入库相关
-const autoIndex = ref(false)
+const autoIndex = ref(true)
 const indexParams = ref({
   chunk_size: 1000,
   chunk_overlap: 200,
