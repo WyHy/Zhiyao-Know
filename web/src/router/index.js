@@ -85,7 +85,7 @@ const router = createRouter({
         {
           path: '',
           name: 'KnowledgeComp',
-          component: () => import('../views/KnowledgeView.vue'),
+          component: () => import('../views/FileSearchTest.vue'),
           meta: { keepAlive: true, requiresAuth: true }
         }
       ]
