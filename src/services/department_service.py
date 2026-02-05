@@ -154,14 +154,13 @@ class DepartmentService:
                 for row in result.fetchall()
             ]
             
-            # 查询每个部门的用户数量（主部门）
+            # 查询每个部门的用户数量
             user_count_result = await session.execute(
                 text("""
-                    SELECT udr.department_id, COUNT(DISTINCT udr.user_id) as user_count
-                    FROM user_department_relations udr
-                    JOIN users u ON udr.user_id = u.id
-                    WHERE udr.is_primary = 1 AND u.is_deleted = 0
-                    GROUP BY udr.department_id
+                    SELECT department_id, COUNT(*) as user_count
+                    FROM users
+                    WHERE is_deleted = 0 AND department_id IS NOT NULL
+                    GROUP BY department_id
                 """)
             )
             

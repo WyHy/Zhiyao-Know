@@ -391,7 +391,7 @@ class KnowledgeBaseManager:
             kb_instance = await self._get_kb_for_database(db_id)
             result = await kb_instance.delete_database(db_id)
 
-            # 删除知识库-部门关联关系
+            # 清理知识库关联数据
             from src.storage.postgres.manager import PostgresManager
             from sqlalchemy import text
             
@@ -400,14 +400,20 @@ class KnowledgeBaseManager:
             
             try:
                 async with pg_manager.get_async_session_context() as session:
+                    # 删除知识库-部门关联
                     await session.execute(
                         text("DELETE FROM kb_department_relations WHERE kb_id = :kb_id"),
                         {"kb_id": db_id}
                     )
+                    # 删除知识库访问控制（黑名单）
+                    await session.execute(
+                        text("DELETE FROM kb_access_control WHERE kb_id = :kb_id"),
+                        {"kb_id": db_id}
+                    )
                     await session.commit()
-                logger.info(f"Removed kb_department_relations for {db_id}")
+                logger.info(f"Cleaned up relations for kb {db_id}")
             except Exception as e:
-                logger.warning(f"Failed to remove kb_department_relations for {db_id}: {e}")
+                logger.warning(f"Failed to clean up relations for {db_id}: {e}")
 
             # 删除数据库记录
             kb_repo = KnowledgeBaseRepository()
@@ -467,6 +473,18 @@ class KnowledgeBaseManager:
         try:
             kb_instance = await self._get_kb_for_database(db_id)
             db_info = kb_instance.get_database_info(db_id)
+            
+            # 如果 kb_instance.get_database_info 返回 None，使用默认结构
+            if db_info is None:
+                db_info = {
+                    "db_id": db_id,
+                    "name": kb.name,
+                    "description": kb.description,
+                    "kb_type": kb.kb_type,
+                    "files": {},
+                    "row_count": 0,
+                    "status": "已连接",
+                }
         except KBNotFoundError:
             db_info = {
                 "db_id": db_id,
@@ -479,11 +497,12 @@ class KnowledgeBaseManager:
             }
 
         # 添加数据库中的附加字段
-        db_info["additional_params"] = kb.additional_params or {}
-        db_info["share_config"] = kb.share_config or {"is_shared": True, "accessible_departments": []}
-        db_info["mindmap"] = kb.mindmap
-        db_info["sample_questions"] = kb.sample_questions or []
-        db_info["query_params"] = kb.query_params
+        if db_info:  # 确保 db_info 不为 None
+            db_info["additional_params"] = kb.additional_params or {}
+            db_info["share_config"] = kb.share_config or {"is_shared": True, "accessible_departments": []}
+            db_info["mindmap"] = kb.mindmap
+            db_info["sample_questions"] = kb.sample_questions or []
+            db_info["query_params"] = kb.query_params
 
         return db_info
 

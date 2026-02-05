@@ -74,9 +74,7 @@
         :auto-size="{ minRows: 3, maxRows: 10 }"
       />
 
-      <!-- 共享配置 -->
-      <h3>共享设置</h3>
-      <ShareConfigForm v-model="shareConfig" :auto-select-user-dept="true" />
+      <!-- 共享配置：创建时自动设置为全员可见，无需用户配置 -->
       <template #footer>
         <a-button key="back" @click="cancelCreateDatabase">取消</a-button>
         <a-button
@@ -300,7 +298,7 @@ import { Folder, FileUp, FolderUp, FileText, File } from 'lucide-vue-next'
 import { typeApi, fileApi } from '@/apis/knowledge_api'
 import ModelSelectorComponent from '@/components/ModelSelectorComponent.vue'
 import EmbeddingModelSelector from '@/components/EmbeddingModelSelector.vue'
-import ShareConfigForm from '@/components/ShareConfigForm.vue'
+// ShareConfigForm 已移至 KnowledgeBaseCard.vue 用于编辑时的共享配置
 import FileTable from '@/components/FileTable.vue'
 import FileDetailModal from '@/components/FileDetailModal.vue'
 import { parseToShanghai } from '@/utils/time'
@@ -341,11 +339,7 @@ const uploadTasks = ref([])
 const uploadTabActiveKey = ref('uploading')
 let uploadPollingTimer = null
 
-// 新建知识库相关
-const shareConfig = ref({
-  is_shared: true,
-  accessible_department_ids: []
-})
+// 新建知识库相关（共享配置由后端自动设置）
 
 const languageOptions = [
   { label: '中文 Chinese', value: 'Chinese' },
@@ -436,10 +430,6 @@ const loadSupportedKbTypes = async () => {
 
 const resetNewDatabase = () => {
   Object.assign(newDatabase, createEmptyDatabaseForm())
-  shareConfig.value = {
-    is_shared: true,
-    accessible_department_ids: []
-  }
 }
 
 const cancelCreateDatabase = () => {
@@ -472,12 +462,7 @@ const buildRequestData = () => {
     }
   }
 
-  requestData.share_config = {
-    is_shared: shareConfig.value.is_shared,
-    accessible_departments: shareConfig.value.is_shared
-      ? []
-      : shareConfig.value.accessible_department_ids || []
-  }
+  // share_config 由后端自动设置（全员可见 + 创建者部门）
 
   if (['milvus'].includes(newDatabase.kb_type)) {
     if (newDatabase.storage) {

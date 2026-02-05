@@ -54,13 +54,13 @@ const router = createRouter({
           path: '',
           name: 'DatabaseComp',
           component: () => import('../views/DataBaseView.vue'),
-          meta: { keepAlive: true, requiresAuth: true, requiresAdmin: true }
+          meta: { keepAlive: true, requiresAuth: true }  // 移除 requiresAdmin
         },
         {
           path: ':database_id',
           name: 'DatabaseInfoComp',
           component: () => import('../views/DataBaseInfoView.vue'),
-          meta: { keepAlive: false, requiresAuth: true, requiresAdmin: true }
+          meta: { keepAlive: false, requiresAuth: true }  // 移除 requiresAdmin
         }
       ]
     },
@@ -86,7 +86,7 @@ const router = createRouter({
           path: '',
           name: 'FileSearchTestComp',
           component: () => import('../views/FileSearchTest.vue'),
-          meta: { keepAlive: false, requiresAuth: true, requiresAdmin: true }
+          meta: { keepAlive: false, requiresAuth: true }  // 移除 requiresAdmin
         }
       ]
     },

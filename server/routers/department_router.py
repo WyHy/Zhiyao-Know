@@ -7,10 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 
 from src.services.department_service import DepartmentService
-from src.services.user_department_service import UserDepartmentService
 from src.storage.postgres.models_business import User
-from server.utils.auth_middleware import get_superadmin_user, get_admin_user, get_current_user, get_required_user
-from server.utils.common_utils import log_operation
+from server.utils.auth_middleware import get_superadmin_user, get_required_user
 
 # 创建路由器
 department = APIRouter(prefix="/departments", tags=["department"])
@@ -52,13 +50,6 @@ class DepartmentResponse(BaseModel):
     is_active: bool
     created_at: str
     updated_at: str
-
-
-class UserDepartmentAdd(BaseModel):
-    """为用户添加部门"""
-    
-    department_ids: list[int]
-    primary_id: int | None = None
 
 
 # =============================================================================
@@ -167,80 +158,3 @@ async def delete_department(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"删除部门失败: {str(e)}")
-
-
-# =============================================================================
-# === 用户-部门关联路由 ===
-# =============================================================================
-
-
-@department.post("/{user_id}/departments")
-async def add_user_departments(
-    user_id: int,
-    data: UserDepartmentAdd,
-    current_user: User = Depends(get_admin_user),
-):
-    """为用户添加部门"""
-    service = UserDepartmentService()
-    
-    try:
-        user_depts = await service.add_user_departments(
-            user_id=user_id,
-            department_ids=data.department_ids,
-            primary_id=data.primary_id,
-        )
-        
-        return {"success": True, "data": user_depts, "message": "部门添加成功"}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"添加部门失败: {str(e)}")
-
-
-@department.get("/{user_id}/departments")
-async def get_user_departments(
-    user_id: int,
-    current_user: User = Depends(get_current_user),
-):
-    """获取用户的所有部门"""
-    # 普通用户只能查看自己的部门
-    if current_user.role not in ["superadmin", "admin"] and current_user.id != user_id:
-        raise HTTPException(status_code=403, detail="无权访问")
-    
-    service = UserDepartmentService()
-    user_depts = await service.get_user_departments(user_id)
-    
-    return {"success": True, "data": user_depts}
-
-
-@department.delete("/{user_id}/departments/{department_id}")
-async def remove_user_department(
-    user_id: int,
-    department_id: int,
-    current_user: User = Depends(get_admin_user),
-):
-    """移除用户的部门"""
-    service = UserDepartmentService()
-    
-    try:
-        await service.remove_user_department(user_id, department_id)
-        return {"success": True, "message": "部门移除成功"}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"移除部门失败: {str(e)}")
-
-
-@department.put("/{user_id}/primary-department/{department_id}")
-async def set_primary_department(
-    user_id: int,
-    department_id: int,
-    current_user: User = Depends(get_admin_user),
-):
-    """设置用户的主部门"""
-    service = UserDepartmentService()
-    
-    try:
-        await service.set_primary_department(user_id, department_id)
-        return {"success": True, "message": "主部门设置成功"}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"设置主部门失败: {str(e)}")

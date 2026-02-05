@@ -41,7 +41,6 @@ class Department(Base):
 
     # 关联关系
     parent = relationship("Department", remote_side=[id], backref="children")
-    user_relations = relationship("UserDepartmentRelation", back_populates="department", cascade="all, delete-orphan")
     kb_relations = relationship("KBDepartmentRelation", back_populates="department", cascade="all, delete-orphan")
 
     def to_dict(self, include_children=False) -> dict[str, Any]:
@@ -89,9 +88,6 @@ class User(Base):
 
     # 关联操作日志
     operation_logs = relationship("OperationLog", back_populates="user", cascade="all, delete-orphan")
-
-    # 关联部门（多对多）
-    department_relations = relationship("UserDepartmentRelation", back_populates="user", cascade="all, delete-orphan")
     
     # 访问控制关系（指定 foreign_keys 避免歧义）
     kb_access_controls = relationship("KBAccessControl", back_populates="user", foreign_keys="[KBAccessControl.user_id]", cascade="all, delete-orphan")
@@ -544,33 +540,6 @@ class TaskRecord(Base):
         return data
 
 
-class UserDepartmentRelation(Base):
-    """用户-部门关联表（多对多）"""
-
-    __tablename__ = "user_department_relations"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    department_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=False, index=True)
-    is_primary = Column(Integer, nullable=False, default=0)  # 是否为主部门：1=是，0=否
-    created_at = Column(DateTime, default=utc_now_naive)
-
-    # 关联关系
-    user = relationship("User", back_populates="department_relations")
-    department = relationship("Department", back_populates="user_relations")
-
-    __table_args__ = (UniqueConstraint("user_id", "department_id", name="uq_user_department"),)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "department_id": self.department_id,
-            "is_primary": bool(self.is_primary),
-            "created_at": format_utc_datetime(self.created_at),
-        }
-
-
 class KBDepartmentRelation(Base):
     """知识库-部门关联表（多对多）"""
 
@@ -625,48 +594,4 @@ class KBAccessControl(Base):
             "created_by": self.created_by,
         }
 
-
-class KBFile(Base):
-    """知识库文件表（用于文件检索）"""
-
-    __tablename__ = "kb_files"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    file_id = Column(String(100), unique=True, nullable=False, index=True)
-    kb_id = Column(String(100), nullable=False, index=True)
-    filename = Column(String(500), nullable=False, index=True)
-    file_path = Column(Text, nullable=True)
-    file_size = Column(Integer, nullable=True)
-    file_type = Column(String(50), nullable=True)
-    status = Column(String(20), nullable=False, default="uploaded", index=True)
-    
-    # 检索字段
-    title = Column(Text, nullable=True)
-    summary = Column(Text, nullable=True)
-    tags = Column(JSON, nullable=True, default=list)
-    
-    created_at = Column(DateTime, default=utc_now_naive, index=True)
-    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-
-    # 关联关系
-    creator = relationship("User", foreign_keys=[created_by])
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "file_id": self.file_id,
-            "kb_id": self.kb_id,
-            "filename": self.filename,
-            "file_path": self.file_path,
-            "file_size": self.file_size,
-            "file_type": self.file_type,
-            "status": self.status,
-            "title": self.title,
-            "summary": self.summary,
-            "tags": self.tags or [],
-            "created_at": format_utc_datetime(self.created_at),
-            "updated_at": format_utc_datetime(self.updated_at),
-            "created_by": self.created_by,
-        }
 

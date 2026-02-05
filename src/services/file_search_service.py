@@ -125,121 +125,116 @@ class FileSearchService:
                 "department_stats": {},
             }
         
-        # 4. 从知识库中获取所有文件
+        # 4. 从 knowledge_files 表获取文件
+        from sqlalchemy import text
+        
         all_files = []
         kb_name_map = {}  # 用于记录知识库名称
         
-        for kb_id in kb_ids:
-            try:
-                db_info = await knowledge_base.get_database_info(kb_id)
-                if not db_info:
-                    continue
-                
-                kb_name_map[kb_id] = db_info.get("name", "")
-                files = db_info.get("files", {})
-                
-                for file_id, file_info in files.items():
-                    # 只包含状态为 indexed 或 done 的文件
-                    file_status = file_info.get("status", "")
-                    if file_status not in ["indexed", "done"]:
-                        continue
-                    
-                    file_data = {
-                        "file_id": file_id,
-                        "kb_id": kb_id,
-                        "kb_name": db_info.get("name", ""),
-                        "filename": file_info.get("filename", ""),
-                        "file_path": file_info.get("path", ""),
-                        "file_size": 0,  # 知识库元数据中没有文件大小
-                        "file_type": file_info.get("type", "").lower(),
-                        "status": file_status,
-                        "created_at": file_info.get("created_at", ""),
-                        "updated_at": file_info.get("created_at", ""),
-                        "download_url": f"/api/knowledge/files/{file_id}/download",
-                    }
-                    all_files.append(file_data)
-            except Exception as e:
-                logger.error(f"Error fetching files from kb {kb_id}: {e}")
-                continue
+        async with self.db.get_async_session_context() as session:
+            # 获取知识库名称映射
+            if not kb_ids:
+                logger.warning("No kb_ids to query")
+                return {
+                    "total": 0,
+                    "page": page,
+                    "page_size": page_size,
+                    "files": [],
+                    "kb_count": 0,
+                    "dept_count": 0,
+                    "department_stats": {},
+                }
+            
+            kb_list_str = ", ".join([f"'{kb_id}'" for kb_id in kb_ids])
+            
+            # 获取知识库名称
+            result = await session.execute(
+                text(f"SELECT db_id, name FROM knowledge_bases WHERE db_id IN ({kb_list_str})")
+            )
+            for row in result.fetchall():
+                kb_name_map[row[0]] = row[1]
+            
+            # 构建查询条件
+            where_conditions = [f"db_id IN ({kb_list_str})", "is_folder = false"]
+            query_params = {}
+            
+            # 关键词筛选（模糊搜索）
+            if keyword:
+                where_conditions.append("filename ILIKE :keyword")
+                query_params["keyword"] = f"%{keyword}%"
+            
+            # 文件类型筛选
+            if file_types:
+                types_list = ", ".join([f"'{ft}'" for ft in file_types])
+                where_conditions.append(f"file_type IN ({types_list})")
+            
+            # 时间范围筛选
+            if date_from:
+                where_conditions.append("created_at >= :date_from")
+                query_params["date_from"] = date_from
+            
+            if date_to:
+                where_conditions.append("created_at <= :date_to")
+                query_params["date_to"] = date_to
+            
+            # 只查询已索引的文件
+            where_conditions.append("status IN ('indexed', 'done')")
+            
+            where_clause = " AND ".join(where_conditions)
+            
+            # 查询文件（从 knowledge_files 表）
+            query = f"""
+                SELECT 
+                    file_id, db_id, filename, path, file_size,
+                    file_type, status, created_at, updated_at, created_by
+                FROM knowledge_files
+                WHERE {where_clause}
+                ORDER BY {sort_by} {order.upper()}
+            """
+            
+            result = await session.execute(text(query), query_params)
+            rows = result.fetchall()
+            
+            logger.info(f"Found {len(rows)} files from knowledge_files table")
+            
+            # 转换为字典格式
+            for row in rows:
+                file_data = {
+                    "file_id": row[0],
+                    "kb_id": row[1],
+                    "kb_name": kb_name_map.get(row[1], "未知知识库"),
+                    "filename": row[2],
+                    "file_path": row[3],
+                    "file_size": row[4] or 0,
+                    "file_type": row[5] or "",
+                    "status": row[6],
+                    "created_at": row[7].isoformat() if row[7] else "",
+                    "updated_at": row[8].isoformat() if row[8] else "",
+                    "created_by": row[9],
+                    "download_url": f"/api/knowledge/files/{row[0]}/download",
+                }
+                all_files.append(file_data)
         
-        # 5. 应用筛选条件
-        filtered_files = all_files
-        
-        # 关键词筛选
-        if keyword:
-            keyword_lower = keyword.lower()
-            filtered_files = [
-                f for f in filtered_files
-                if keyword_lower in f["filename"].lower()
-            ]
-        
-        # 文件类型筛选
-        if file_types:
-            file_types_lower = [ft.lower() for ft in file_types]
-            filtered_files = [
-                f for f in filtered_files
-                if f["file_type"] in file_types_lower
-            ]
-        
-        # 时间范围筛选
-        if date_from:
-            try:
-                date_from_dt = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
-                filtered_files = [
-                    f for f in filtered_files
-                    if f["created_at"] and datetime.fromisoformat(
-                        f["created_at"].replace("Z", "+00:00")
-                    ) >= date_from_dt
-                ]
-            except Exception as e:
-                logger.warning(f"Invalid date_from format: {date_from}, {e}")
-        
-        if date_to:
-            try:
-                date_to_dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
-                filtered_files = [
-                    f for f in filtered_files
-                    if f["created_at"] and datetime.fromisoformat(
-                        f["created_at"].replace("Z", "+00:00")
-                    ) <= date_to_dt
-                ]
-            except Exception as e:
-                logger.warning(f"Invalid date_to format: {date_to}, {e}")
-        
-        # 6. 排序
-        valid_sort_fields = ["created_at", "filename", "file_size", "updated_at"]
-        if sort_by not in valid_sort_fields:
-            sort_by = "created_at"
-        
-        reverse = order.lower() == "desc"
-        
-        try:
-            if sort_by == "filename":
-                filtered_files.sort(key=lambda x: x["filename"], reverse=reverse)
-            elif sort_by == "file_size":
-                filtered_files.sort(key=lambda x: x["file_size"] or 0, reverse=reverse)
-            else:  # created_at or updated_at
-                filtered_files.sort(
-                    key=lambda x: x.get(sort_by, "") or "",
-                    reverse=reverse
-                )
-        except Exception as e:
-            logger.warning(f"Sort error: {e}")
-        
-        # 7. 分页
-        total = len(filtered_files)
+        # 5. 分页处理
+        total = len(all_files)
         start = (page - 1) * page_size
         end = start + page_size
-        page_files = filtered_files[start:end]
+        page_files = all_files[start:end]
         
-        # 8. 获取部门统计
+        # 6. 获取部门统计
         dept_stats = await self._get_department_stats_from_kb(kb_ids, department_ids)
+        
+        # 7. 统计涉及的知识库和部门
+        kb_count = len(set(f["kb_id"] for f in all_files))
+        dept_count = len(department_ids) if department_ids else 0
         
         return {
             "total": total,
             "page": page,
             "page_size": page_size,
             "files": page_files,
+            "kb_count": kb_count,
+            "dept_count": dept_count,
             "department_stats": dept_stats,
         }
 

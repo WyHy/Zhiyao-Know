@@ -335,6 +335,7 @@ class MilvusKB(KnowledgeBase):
                 if operator_id:
                     self.files_meta[file_id]["updated_by"] = operator_id
                 await self._save_metadata()
+                
                 return self.files_meta[file_id]
 
         except Exception as e:

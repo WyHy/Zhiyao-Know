@@ -141,19 +141,34 @@ async def get_my_searchable_departments(
     current_user: User = Depends(get_current_user),
 ):
     """获取当前用户可用于检索的部门列表"""
-    from src.services.user_department_service import UserDepartmentService
-    
-    service = UserDepartmentService()
+    from src.storage.postgres.manager import pg_manager
+    from sqlalchemy import text
     
     try:
-        user_depts = await service.get_user_departments(current_user.id)
+        # 直接查询用户所属部门
+        department = None
+        if current_user.department_id:
+            async with pg_manager.get_async_session_context() as session:
+                result = await session.execute(
+                    text("SELECT id, name, parent_id, level, path FROM departments WHERE id = :dept_id AND is_active = 1"),
+                    {"dept_id": current_user.department_id}
+                )
+                row = result.fetchone()
+                if row:
+                    department = {
+                        "id": row[0],
+                        "name": row[1],
+                        "parent_id": row[2],
+                        "level": row[3],
+                        "path": row[4],
+                    }
         
         return {
             "success": True,
             "data": {
                 "user_id": current_user.id,
-                "departments": user_depts,
-                "primary_department": next((d for d in user_depts if d.get("is_primary")), None),
+                "departments": [department] if department else [],
+                "department": department,
             }
         }
         
@@ -171,7 +186,7 @@ async def get_file_stats(
     
     返回用户可访问的知识库和文件数量统计
     """
-    from src.services.user_department_service import UserDepartmentService, KBDepartmentService
+    from src.services.user_department_service import KBDepartmentService
     from src.services.kb_access_control_service import KBAccessControlService
     
     try:
@@ -181,10 +196,8 @@ async def get_file_stats(
             dept_ids = [int(x.strip()) for x in department_ids.split(",") if x.strip()]
         
         # 如果没指定部门，使用用户所属部门
-        if not dept_ids:
-            user_dept_service = UserDepartmentService()
-            user_depts = await user_dept_service.get_user_departments(current_user.id)
-            dept_ids = [d["id"] for d in user_depts]
+        if not dept_ids and current_user.department_id:
+            dept_ids = [current_user.department_id]
         
         if not dept_ids:
             return {
@@ -208,14 +221,14 @@ async def get_file_stats(
         else:
             accessible_kb_ids = kb_ids
         
-        # 查询文件数量
+        # 查询文件数量（从 knowledge_files 表）
         from src.storage.postgres.manager import pg_manager
         from sqlalchemy import text
         
         async with pg_manager.get_async_session_context() as session:
             if accessible_kb_ids:
                 result = await session.execute(
-                    text("SELECT COUNT(*) FROM kb_files WHERE kb_id = ANY(:kb_ids) AND status = 'indexed'"),
+                    text("SELECT COUNT(*) FROM knowledge_files WHERE db_id = ANY(:kb_ids) AND status IN ('indexed', 'done') AND is_folder = false"),
                     {"kb_ids": accessible_kb_ids}
                 )
                 file_count = result.fetchone()[0]

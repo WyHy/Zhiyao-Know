@@ -18,11 +18,10 @@
 
 2. **表结构自动创建**：
    - ✅ `departments` - 部门表（树形结构）
-   - ✅ `users` - 用户表
-   - ✅ `user_department_relations` - 用户-部门关联表
+   - ✅ `users` - 用户表（通过 department_id 关联部门）
    - ✅ `kb_department_relations` - 知识库-部门关联表
    - ✅ `kb_access_control` - 知识库访问控制表（黑名单）
-   - ✅ `kb_files` - 知识库文件表
+   - ✅ `knowledge_files` - 知识库文件表
    - ✅ `conversations` - 对话表
    - ✅ `messages` - 消息表
    - ✅ `knowledge_bases` - 知识库表
@@ -135,9 +134,9 @@ asyncio.run(check())
 - `departments`
 - `users`
 - `kb_department_relations`
-- `user_department_relations`
 - `kb_access_control`
-- `kb_files`
+- `knowledge_files`
+- `knowledge_bases`
 - 等等...
 
 ### 6. 创建测试数据（可选）
@@ -195,17 +194,6 @@ CREATE TABLE departments (
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP,
     updated_at TIMESTAMP
-);
-```
-
-#### user_department_relations（用户-部门关联）
-```sql
-CREATE TABLE user_department_relations (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    department_id INTEGER REFERENCES departments(id) ON DELETE CASCADE,
-    is_primary INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMP
 );
 ```
 
