@@ -81,4 +81,5 @@ test/data/*.jsonl
 !test/data/complex_graph_test.jsonl
 
 # OCR 测试目录（保留示例图片）
-*/ocr_test
+*/ocr_test/*
+!test/data/ocr_test/PixPin_2025-06-19_23-42-17.png

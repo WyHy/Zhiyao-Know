@@ -25,6 +25,9 @@
             :columns="columns"
             :rowKey="(record) => record.id"
             :pagination="false"
+            :defaultExpandAllRows="false"
+            :expandedRowKeys="expandedRowKeys"
+            @expand="handleExpand"
             class="department-table"
           >
             <template #bodyCell="{ column, record }">
@@ -149,7 +152,7 @@
 </template>
 
 <script setup>
-import { reactive, onMounted, computed } from 'vue'
+import { reactive, onMounted, computed, ref } from 'vue'
 import { notification, Modal } from 'ant-design-vue'
 import { departmentApi } from '@/apis'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
@@ -182,6 +185,69 @@ const columns = [
     align: 'center'
   }
 ]
+
+// 展开的行
+const expandedRowKeys = ref([])
+
+// 扁平化部门列表（用于选择上级部门）
+const flattenDepartmentsForSelect = (deptList, result = [], excludeId = null, level = 0) => {
+  deptList.forEach(dept => {
+    if (dept.id !== excludeId) {
+      result.push({
+        value: dept.id,
+        label: '  '.repeat(level) + dept.name,
+        level: dept.level
+      })
+      if (dept.children && dept.children.length > 0) {
+        flattenDepartmentsForSelect(dept.children, result, excludeId, level + 1)
+      }
+    }
+  })
+  return result
+}
+
+// 上级部门选项
+const parentDepartmentOptions = computed(() => {
+  if (!departmentManagement.departments.length) return []
+  const excludeId = departmentManagement.editMode ? departmentManagement.editDepartmentId : null
+  return flattenDepartmentsForSelect(departmentManagement.departments, [], excludeId)
+})
+
+// 获取级别颜色
+const getLevelColor = (level) => {
+  const colors = {
+    1: 'blue',
+    2: 'green',
+    3: 'orange',
+    4: 'red',
+    5: 'purple'
+  }
+  return colors[level] || 'default'
+}
+
+// 切换展开/收起
+const toggleExpand = (id) => {
+  const index = expandedRowKeys.value.indexOf(id)
+  if (index > -1) {
+    expandedRowKeys.value.splice(index, 1)
+  } else {
+    expandedRowKeys.value.push(id)
+  }
+}
+
+// 处理展开事件
+const handleExpand = (expanded, record) => {
+  if (expanded) {
+    if (!expandedRowKeys.value.includes(record.id)) {
+      expandedRowKeys.value.push(record.id)
+    }
+  } else {
+    const index = expandedRowKeys.value.indexOf(record.id)
+    if (index > -1) {
+      expandedRowKeys.value.splice(index, 1)
+    }
+  }
+}
 
 // 部门管理状态
 const departmentManagement = reactive({
@@ -221,18 +287,6 @@ const filterDepartmentTree = (tree, excludeId) => {
       ...node,
       children: node.children ? filterDepartmentTree(node.children, excludeId) : []
     }))
-}
-
-// 根据层级获取颜色
-const getLevelColor = (level) => {
-  const colors = {
-    1: 'blue',
-    2: 'green',
-    3: 'orange',
-    4: 'purple',
-    5: 'red'
-  }
-  return colors[level] || 'default'
 }
 
 // 将树形结构扁平化为列表
@@ -325,6 +379,13 @@ const handleDepartmentFormSubmit = async () => {
     }
 
     departmentManagement.loading = true
+
+    const formData = {
+      name: departmentManagement.form.name.trim(),
+      description: departmentManagement.form.description.trim() || undefined,
+      parent_id: departmentManagement.form.parent_id || null,
+      sort_order: departmentManagement.form.sort_order || 0
+    }
 
     if (departmentManagement.editMode) {
       // 更新部门

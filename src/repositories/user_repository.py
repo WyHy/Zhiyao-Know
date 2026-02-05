@@ -54,8 +54,8 @@ class UserRepository:
 
     async def list_with_department(
         self, skip: int = 0, limit: int = 100, department_id: int | None = None, role: str | None = None
-    ) -> Annotated[list[tuple[User, str | None]], "用户列表，包含部门名称"]:
-        """获取用户列表，包含部门名称"""
+    ) -> Annotated[list[tuple[User, str | None]], "用户列表，包含主部门名称"]:
+        """获取用户列表，包含主部门名称"""
         async with pg_manager.get_async_session_context() as session:
             from src.storage.postgres.models_business import Department
 
