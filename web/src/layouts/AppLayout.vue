@@ -1,7 +1,7 @@
 <script setup>
-import { ref, reactive, onMounted, computed, provide } from 'vue'
+import { ref, reactive, onMounted, computed, provide, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck, Folder, FileSearch } from 'lucide-vue-next'
+import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck, Folder, FileSearch, MessageCircle, FileText, Database, FileCheck } from 'lucide-vue-next'
 
 import { useConfigStore } from '@/stores/config'
 import { useDatabaseStore } from '@/stores/database'
@@ -81,6 +81,39 @@ const mainList = computed(() => {
   const isAdmin = userStore.isAdmin
   const list = []
   
+  // // 智能体菜单（仅管理员可见）
+  // if (isAdmin) {
+  //   list.push({
+  //     name: '智能体',
+  //     path: '/agent',
+  //     icon: Bot,
+  //     activeIcon: Bot,
+  //     hidden: false
+  //   })
+  // }
+  
+  // // 知识图谱菜单（仅管理员可见）
+  // if (isAdmin) {
+  //   list.push({
+  //     name: '知识图谱',
+  //     path: '/graph',
+  //     icon: Waypoints,
+  //     activeIcon: Waypoints,
+  //     hidden: false
+  //   })
+  // }
+  
+  // 对话菜单（所有用户可见）
+  if (isAdmin) {
+    list.push({
+      name: '对话',
+      path: '/chat',
+      icon: MessageCircle,
+      activeIcon: MessageCircle,
+      hidden: false
+    })
+  }
+  
   // 知识库菜单（所有用户可见）
   list.push({
     name: '知识库',
@@ -100,6 +133,28 @@ const mainList = computed(() => {
       hidden: false
     })
   }
+  
+  // 数据采集菜单（仅管理员可见）
+  if (isAdmin) {
+    list.push({
+      name: '数据采集',
+      path: '/data-collection/monitoring-config',
+      icon: Database,
+      activeIcon: Database,
+      hidden: false
+    })
+  }
+  
+  // // 仪表板菜单（仅管理员可见）
+  // if (isAdmin) {
+  //   list.push({
+  //     name: '仪表板',
+  //     path: '/dashboard',
+  //     icon: BarChart3,
+  //     activeIcon: BarChart3,
+  //     hidden: false
+  //   })
+  // }
   
   return list
 })
@@ -257,6 +312,10 @@ div.header,
     }
   }
 
+  .nav-item-wrapper {
+    width: 100%;
+  }
+
   .nav-item {
     display: flex;
     align-items: center;
@@ -277,6 +336,16 @@ div.header,
     cursor: pointer;
     outline: none;
 
+    &.has-children {
+      cursor: pointer;
+    }
+
+    .nav-item-link {
+      width: 100%;
+      text-decoration: none;
+      color: inherit;
+    }
+
     .nav-item-content {
       display: flex;
       flex-direction: row;
@@ -285,6 +354,17 @@ div.header,
       gap: 8px;
       width: 100%;
       padding: 0 8px;
+
+      .submenu-arrow {
+        margin-left: auto;
+        font-size: 10px;
+        transition: transform 0.2s;
+        color: #8c8c8c;
+
+        &.expanded {
+          transform: rotate(180deg);
+        }
+      }
     }
 
     .nav-item-text {
@@ -326,6 +406,10 @@ div.header,
       .nav-item-text {
         color: var(--main-color);
       }
+    }
+
+    &.has-children.active {
+      background-color: rgba(0, 0, 0, 0.05);
     }
 
     &.github {
@@ -396,6 +480,40 @@ div.header,
       width: 100%;
       justify-content: flex-start;
       padding: 8px;
+    }
+  }
+
+  .submenu {
+    margin-left: 24px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+
+    .submenu-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      text-decoration: none;
+      color: #666;
+      font-size: 12px;
+      transition: all 0.2s;
+      margin: 2px 4px;
+
+      .submenu-item-text {
+        font-size: 12px;
+      }
+
+      &.active {
+        background-color: rgba(24, 144, 255, 0.1);
+        color: var(--main-color);
+        font-weight: 500;
+      }
+
+      &:hover {
+        background-color: rgba(0, 0, 0, 0.03);
+        color: var(--main-color);
+      }
     }
   }
 }

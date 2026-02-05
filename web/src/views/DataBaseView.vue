@@ -127,6 +127,9 @@
           style="width: 100%"
           :options="databaseOptions"
         />
+        <div class="auto-index-toggle" style="margin-top: 16px;">
+          <!-- <a-checkbox v-model:checked="autoIndex">上传后自动入库</a-checkbox> -->
+        </div>
         <div class="modal-actions">
           <a-button @click="state.selectDatabaseModalVisible = false">取消</a-button>
           <a-button type="primary" @click="confirmUpload" :loading="uploading">确定</a-button>
@@ -335,6 +338,14 @@ const selectedFiles = ref([])
 const uploading = ref(false)
 const fileInputRef = ref(null)
 const folderInputRef = ref(null)
+
+// 自动入库相关
+const autoIndex = ref(true)
+const indexParams = ref({
+  chunk_size: 1000,
+  chunk_overlap: 200,
+  qa_separator: ''
+})
 
 // 上传任务列表
 const uploadTasks = ref([])
@@ -628,6 +639,12 @@ const addFileToDatabase = async (task, dbId) => {
     if (task.content_hash) {
       content_hashes[task.file_path] = task.content_hash
       params.content_hashes = content_hashes
+    }
+    
+    // 如果启用自动入库，添加相关参数
+    if (autoIndex.value) {
+      params.auto_index = true
+      Object.assign(params, indexParams.value)
     }
     
     await databaseStore.addFiles({

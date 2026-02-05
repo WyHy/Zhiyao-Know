@@ -27,6 +27,7 @@
           :dropdown-style="{ maxHeight: '400px', overflow: 'auto' }"
           tree-default-expand-all
           show-checked-strategy="SHOW_ALL"
+          allow-clear
           @change="handleDepartmentSelectChange"
         />
         <a-select
@@ -36,6 +37,7 @@
           mode="multiple"
           class="file-type-select"
           :maxTagCount="2"
+          allow-clear
         >
           <a-select-option value="pdf">PDF</a-select-option>
           <a-select-option value="word">Word</a-select-option>
@@ -515,13 +517,19 @@ const handleDepartmentSelectChange = (value) => {
   if (Array.isArray(value) && value.length > 1) {
     selectedDepartmentKeys.value = []
     expandedKeys.value = []
+    // 多选时也执行搜索
+    handleSearch()
   } else if (Array.isArray(value) && value.length === 1) {
-    // 如果只选择了一个部门，更新左侧树的选中状态并展开
+    // 如果只选择了一个部门，更新左侧树的选中状态并展开，然后执行搜索
     selectedDepartmentKeys.value = [value[0]]
     expandToNode(value[0])
+    // 执行搜索
+    handleSearch()
   } else {
     selectedDepartmentKeys.value = []
     expandedKeys.value = []
+    // 清空时也执行搜索
+    handleSearch()
   }
 }
 
@@ -697,7 +705,7 @@ onMounted(async () => {
   flex-shrink: 0;
   background: var(--gray-50);
   border-radius: 8px;
-  padding: 16px;
+  padding: 16px 8px 16px 16px;
   overflow-y: auto;
   border: 1px solid var(--gray-150);
   transition: all 0.3s ease;
@@ -730,6 +738,24 @@ onMounted(async () => {
   }
 
   .department-tree {
+    :deep(.ant-tree-list),
+    :deep(ul.ant-tree-list) {
+      padding: 8px 8px 8px 0 !important;
+      margin-right: 8px !important;
+    }
+    
+    :deep(.ant-tree-list-holder) {
+      padding: 8px 8px 8px 0 !important;
+    }
+    
+    :deep(.ant-tree-list-holder-inner) {
+      padding: 8px 8px 8px 0 !important;
+    }
+    
+    :deep(.ant-tree) {
+      padding: 8px 8px 8px 0 !important;
+    }
+
     :deep(.ant-tree-node-selected) {
       background-color: var(--main-5);
     }
@@ -738,7 +764,7 @@ onMounted(async () => {
       border-radius: 4px;
       padding: 4px 8px;
       padding-right: 16px;
-      margin-right: 8px;
+      margin-right: 10px;
       transition: all 0.2s ease;
 
       &:hover {
@@ -750,7 +776,7 @@ onMounted(async () => {
       background-color: var(--main-5);
       color: var(--main-color);
       padding-right: 16px;
-      margin-right: 8px;
+      margin-right: 10px;
     }
 
     :deep(.ant-tree-node-content-wrapper:hover) {
