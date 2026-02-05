@@ -135,7 +135,8 @@ const tryAutoSelectUserDept = () => {
 const loadDepartments = async () => {
   try {
     const res = await getDepartments()
-    departmentTree.value = res.data || []
+    // getDepartments 返回的是数组，不是包含 data 的对象
+    departmentTree.value = Array.isArray(res) ? res : (res?.data || [])
     console.log('[ShareConfigForm] 加载部门树，节点数:', departmentTree.value.length)
 
     if (

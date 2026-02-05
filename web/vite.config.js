@@ -14,7 +14,8 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: {
         '^/api': {
-          target: env.VITE_API_URL || 'http://47.122.119.66:5173',
+          // target: env.VITE_API_URL || 'http://47.122.119.66:5173',
+          target: env.VITE_API_URL || 'https://le2ydojb7w.fy.takin.cc/',
           changeOrigin: true
         }
       },

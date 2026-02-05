@@ -91,6 +91,44 @@ const router = createRouter({
       ]
     },
     {
+      path: '/chat',
+      name: 'chat',
+      component: AppLayout,
+      children: [
+        {
+          path: '',
+          name: 'ChatComp',
+          component: () => import('../views/ChatView.vue'),
+          meta: { keepAlive: true, requiresAuth: true }
+        }
+      ]
+    },
+    {
+      path: '/data-collection',
+      name: 'data-collection',
+      component: AppLayout,
+      children: [
+        {
+          path: 'monitoring-config',
+          name: 'MonitoringConfig',
+          component: () => import('../views/DataCollectionView.vue'),
+          meta: { keepAlive: true, requiresAuth: true, requiresAdmin: true }
+        },
+        {
+          path: 'data-extraction',
+          name: 'DataExtraction',
+          component: () => import('../views/DataCollectionView.vue'),
+          meta: { keepAlive: true, requiresAuth: true, requiresAdmin: true }
+        },
+        {
+          path: 'log-management',
+          name: 'LogManagement',
+          component: () => import('../views/DataCollectionView.vue'),
+          meta: { keepAlive: true, requiresAuth: true, requiresAdmin: true }
+        }
+      ]
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',
       component: () => import('../views/EmptyView.vue'),
