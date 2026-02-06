@@ -536,8 +536,8 @@ const handleDepartmentSelectChange = (value) => {
 // 下载文件
 const handleDownloadFile = async (record) => {
   try {
-    // 如果文件有 db_id 和 file_id，使用现有的下载接口
-    if (record.db_id && record.file_id) {
+    // 如果文件有 kb_id 和 file_id，使用现有的下载接口
+    if (record.kb_id && record.file_id) {
       const response = await documentApi.downloadDocument(record.db_id, record.file_id)
 
       const contentDisposition = response.headers.get('content-disposition')
