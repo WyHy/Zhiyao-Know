@@ -296,10 +296,11 @@ const parsedData = computed(() => {
 
   &.human,
   &.sent {
-    max-width: 95%;
+    max-width: 70%;
     color: var(--gray-1000);
     background-color: var(--main-50);
     align-self: flex-end;
+    margin-left: auto;
     border-radius: 0.5rem;
     padding: 0.5rem 1rem;
   }

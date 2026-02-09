@@ -120,6 +120,7 @@
         <template #bodyCell="{ column, record }">
           <div v-if="column.key === 'filename'">
             <a-button
+              v-if="!record.is_folder"
               class="file-link-btn"
               type="link"
               @click="handleDownloadFile(record)"
@@ -134,6 +135,17 @@
               />
               {{ record.filename }}
             </a-button>
+            <span v-else>
+              <component
+                :is="getFileIcon(record.filename)"
+                :style="{
+                  marginRight: '8px',
+                  color: getFileIconColor(record.filename),
+                  fontSize: '16px'
+                }"
+              />
+              {{ record.filename }}
+            </span>
           </div>
           <span v-else-if="column.key === 'size'">
             {{ record.size ? formatFileSize(record.size) : '-' }}
@@ -176,6 +188,7 @@
           </span>
           <div v-else-if="column.key === 'action'">
             <a-button
+              v-if="!record.is_folder"
               type="link"
               size="small"
               @click="handleDownloadFile(record)"
@@ -185,6 +198,7 @@
             >
               下载
             </a-button>
+            <span v-else style="color: #bfbfbf;">-</span>
           </div>
         </template>
       </a-table>
@@ -421,7 +435,13 @@ const handleSearch = async () => {
     console.log('搜索响应:', response)
     
     if (response.success && response.data) {
-      fileList.value = response.data.files || []
+      const files = response.data.files || []
+      // 调试：打印第一个文件的数据结构
+      if (files.length > 0) {
+        console.log('文件数据结构示例:', files[0])
+        console.log('文件所有字段:', Object.keys(files[0]))
+      }
+      fileList.value = files
       pagination.value = {
         total: response.data.total || 0,
         page: response.data.page || 1,
@@ -536,9 +556,24 @@ const handleDepartmentSelectChange = (value) => {
 // 下载文件
 const handleDownloadFile = async (record) => {
   try {
+    // 检查是否是文件夹，文件夹不能下载
+    if (record.is_folder) {
+      message.warning('文件夹不支持下载')
+      return
+    }
+    
+    // 调试：打印文件记录信息
+    console.log('下载文件 - 记录信息:', record)
+    
+    // 尝试多种可能的字段名
+    const dbId = record.kb_id || record.db_id || record.database_id || record.dbId || record.databaseId
+    const fileId = record.file_id || record.document_id || record.doc_id || record.fileId || record.documentId
+    
+    console.log('提取的ID:', { dbId, fileId })
+    
     // 如果文件有 db_id 和 file_id，使用现有的下载接口
-    if (record.db_id && record.file_id) {
-      const response = await documentApi.downloadDocument(record.db_id, record.file_id)
+    if (dbId && fileId) {
+      const response = await documentApi.downloadDocument(dbId, fileId)
 
       const contentDisposition = response.headers.get('content-disposition')
       let filename = record.filename
@@ -575,7 +610,13 @@ const handleDownloadFile = async (record) => {
       window.URL.revokeObjectURL(url)
       message.success('下载成功')
     } else {
-      message.warning('文件信息不完整，无法下载')
+      console.warn('文件信息不完整，缺少必要字段:', { 
+        record, 
+        dbId: dbId || '缺失', 
+        fileId: fileId || '缺失',
+        availableKeys: Object.keys(record)
+      })
+      message.warning('文件信息不完整，无法下载。请检查文件是否已正确上传到知识库。')
     }
   } catch (error) {
     console.error('下载文件时出错:', error)
