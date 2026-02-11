@@ -270,6 +270,37 @@ const parsedData = computed(() => {
     content = content.replace(thinkMatch[0], '').trim()
   }
 
+  // 过滤掉工具调用相关的标签，这些标签应该通过 ToolCallRenderer 组件显示，而不是在内容中显示
+  // 匹配类似 <调用工具>、<工具名称="xxx">、<输入>、<输出> 等标签及其内容
+  // 支持嵌套和分开的标签格式
+  const toolCallPatterns = [
+    // 匹配完整的 <调用工具>...</调用工具> 块（包括嵌套的标签）
+    /<调用工具>[\s\S]*?<\/调用工具>/gi,
+    // 匹配 <工具名称="xxx">...</工具名称> 块
+    /<工具名称\s*=\s*["'][^"']*["'][^>]*>[\s\S]*?<\/工具名称>/gi,
+    // 匹配单独的 <工具名称="xxx"> 标签（可能没有闭合标签）
+    /<工具名称\s*=\s*["'][^"']*["'][^>]*>/gi,
+    // 匹配 <输入>...</输入> 块
+    /<输入>[\s\S]*?<\/输入>/gi,
+    // 匹配 <输出>...</输出> 块
+    /<输出>[\s\S]*?<\/输出>/gi,
+    // 匹配单独的标签（可能没有闭合）
+    /<\/?调用工具>/gi,
+    /<\/?工具名称[^>]*>/gi,
+    /<\/?输入>/gi,
+    /<\/?输出>/gi
+  ]
+  
+  toolCallPatterns.forEach(pattern => {
+    content = content.replace(pattern, '')
+  })
+  content = content.trim()
+
+  // 如果过滤后内容为空，且存在工具调用，则不显示内容（工具调用会单独显示）
+  if (!content && validToolCalls.value && validToolCalls.value.length > 0) {
+    content = ''
+  }
+
   return {
     content,
     reasoning_content
