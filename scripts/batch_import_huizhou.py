@@ -502,7 +502,7 @@ class HuizhouImporter:
                     file_infos.append(result)
                 
                 if not self.dry_run:
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(2.0)  # 增加延时到2秒，避免请求过快
             
             # 添加文档并入库
             if file_infos:

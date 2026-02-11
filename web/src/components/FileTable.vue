@@ -297,7 +297,11 @@
           <template v-if="props.readonlyMode">
             <!-- 只读模式：只显示下载按钮 -->
             <a-button
-              v-if="!record.is_folder"
+              v-if="
+                !record.is_folder &&
+                (userStore.userInfo?.role !== 'user' ||
+                  configStore.config?.ENABLE_USER_DOWNLOAD !== false)
+              "
               type="text"
               @click="handleDownloadFile(record)"
               :disabled="
@@ -331,6 +335,10 @@
                 </template>
                 <template v-else>
                   <a-button
+                    v-if="
+                      userStore.userInfo?.role !== 'user' ||
+                      configStore.config?.ENABLE_USER_DOWNLOAD !== false
+                    "
                     type="text"
                     block
                     @click="handleDownloadFile(record)"
@@ -385,6 +393,7 @@ import { ref, computed, watch, h } from 'vue'
 import { useDatabaseStore } from '@/stores/database'
 import { message, Modal } from 'ant-design-vue'
 import { useUserStore } from '@/stores/user'
+import { useConfigStore } from '@/stores/config'
 import { documentApi } from '@/apis/knowledge_api'
 import {
   CheckCircleFilled,
@@ -419,6 +428,7 @@ import FileUploadModal from '@/components/FileUploadModal.vue'
 
 const store = useDatabaseStore()
 const userStore = useUserStore()
+const configStore = useConfigStore()
 
 const sortField = ref('filename')
 const sortOptions = [

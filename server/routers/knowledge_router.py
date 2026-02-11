@@ -675,6 +675,11 @@ async def delete_document(db_id: str, doc_id: str, current_user: User = Depends(
 async def download_document(db_id: str, doc_id: str, request: Request, current_user: User = Depends(get_required_user)):
     """下载原始文件 - 根据path类型选择本地或MinIO下载"""
     logger.debug(f"Download document {doc_id} from {db_id}")
+
+    # 检查下载权限
+    if not config.ENABLE_USER_DOWNLOAD and current_user.role == "user":
+        raise HTTPException(status_code=403, detail="Download is disabled for normal users")
+
     try:
         file_info = await knowledge_base.get_file_basic_info(db_id, doc_id)
         file_meta = file_info.get("meta", {})

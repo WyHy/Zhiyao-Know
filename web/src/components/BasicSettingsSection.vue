@@ -84,6 +84,17 @@
       </div>
     </div>
 
+    <h3 class="section-title">系统功能配置</h3>
+    <div class="section">
+      <div class="card">
+        <span class="label">{{ items?.ENABLE_USER_DOWNLOAD?.des || '允许普通用户下载文件' }}</span>
+        <a-switch
+          :checked="configStore.config?.ENABLE_USER_DOWNLOAD"
+          @change="handleChange('ENABLE_USER_DOWNLOAD', $event)"
+        />
+      </div>
+    </div>
+
     <!-- 服务链接部分 -->
     <h3 v-if="userStore.isAdmin" class="section-title">服务链接</h3>
     <div v-if="userStore.isAdmin">

@@ -1077,7 +1077,7 @@ class KnowledgeBase(ABC):
                     },
                 )
 
-        for file_id, meta in self.files_meta.items():
+        for file_id, meta in list(self.files_meta.items()):
             db_id = meta.get("database_id")
             if not db_id:
                 continue

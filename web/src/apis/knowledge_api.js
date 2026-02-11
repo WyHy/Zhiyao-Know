@@ -152,7 +152,7 @@ export const documentApi = {
    * @returns {Promise} - Response对象
    */
   downloadDocument: async (dbId, docId) => {
-    return apiAdminGet(`/api/knowledge/databases/${dbId}/documents/${docId}/download`, {}, 'blob')
+    return apiGet(`/api/knowledge/databases/${dbId}/documents/${docId}/download`, {}, true, 'blob')
   },
 
   /**

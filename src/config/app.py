@@ -42,6 +42,7 @@ class Config(BaseModel):
     enable_content_guard: bool = Field(default=False, description="是否启用内容审查")
     enable_content_guard_llm: bool = Field(default=False, description="是否启用LLM内容审查")
     enable_web_search: bool = Field(default=False, description="是否启用网络搜索")
+    ENABLE_USER_DOWNLOAD: bool = Field(default=True, description="允许普通用户下载文件")
 
     # ============================================================
     # 模型配置

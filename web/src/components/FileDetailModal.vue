@@ -30,7 +30,14 @@
           </div>
 
           <!-- 下载按钮下拉菜单 -->
-          <a-dropdown trigger="click" v-if="file">
+          <a-dropdown
+            trigger="click"
+            v-if="
+              file &&
+              (userStore.userInfo?.role !== 'user' ||
+                configStore.config?.ENABLE_USER_DOWNLOAD !== false)
+            "
+          >
             <a-button type="default" class="download-btn">
               <template #icon><Download :size="16" /></template>
               下载
@@ -106,6 +113,8 @@
 import { computed, ref, watch } from 'vue'
 import { useDatabaseStore } from '@/stores/database'
 import { useThemeStore } from '@/stores/theme'
+import { useUserStore } from '@/stores/user'
+import { useConfigStore } from '@/stores/config'
 import { message } from 'ant-design-vue'
 import { documentApi } from '@/apis/knowledge_api'
 import { mergeChunks } from '@/utils/chunkUtils'
@@ -116,6 +125,8 @@ import { Download, ChevronDown, FileText, X } from 'lucide-vue-next'
 
 const store = useDatabaseStore()
 const themeStore = useThemeStore()
+const userStore = useUserStore()
+const configStore = useConfigStore()
 
 const visible = computed({
   get: () => store.state.fileDetailModalVisible,
