@@ -339,33 +339,45 @@ class HuizhouImporter:
             return (f"minio://fake/{filename}", "fake_hash")
         
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
-                with open(file_path, "rb") as f:
-                    files = {"file": (filename, f)}
-                    response = await client.post(
-                        f"{API_BASE_URL}/api/knowledge/files/upload?db_id={kb_id}",
-                        headers=self.get_headers(),
-                        files=files
-                    )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    # 上传 API 返回 file_path 和 content_hash
-                    minio_path = data.get("file_path") or data.get("minio_path")
-                    content_hash = data.get("content_hash")
-                    print(f"        ✅ 上传成功")
-                    self.stats["files_uploaded"] += 1
-                    return (minio_path, content_hash)
-                elif response.status_code == 409:
-                    # 文件已存在
-                    print(f"        ⚠️  文件已存在，跳过")
-                    return None
-                else:
-                    print(f"        ❌ 上传失败: {response.text[:80]}")
-                    self.stats["files_failed"] += 1
-                    return None
+            file_size = os.path.getsize(file_path)
+            file_size_mb = file_size / (1024 * 1024)
+            print(f"      上传: {short_name} ({file_size_mb:.2f} MB)")
+            
+            # 重试机制
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    async with httpx.AsyncClient(timeout=300) as client:
+                        with open(file_path, "rb") as f:
+                            files = {"file": (filename, f)}
+                            response = await client.post(
+                                f"{API_BASE_URL}/api/knowledge/files/upload?db_id={kb_id}",
+                                headers=self.get_headers(),
+                                files=files
+                            )
+                        
+                        if response.status_code == 200:
+                            data = response.json()
+                            minio_path = data.get("file_path") or data.get("minio_path")
+                            content_hash = data.get("content_hash")
+                            print(f"        ✅ 上传成功")
+                            self.stats["files_uploaded"] += 1
+                            return (minio_path, content_hash)
+                        elif response.status_code == 409:
+                            print(f"        ⚠️  文件已存在，跳过")
+                            return None
+                        else:
+                            print(f"        ❌ 上传失败 (尝试 {attempt+1}/{max_retries}): {response.status_code} - {response.text[:200]}")
+                except Exception as e:
+                    print(f"        ❌ 上传异常 (尝试 {attempt+1}/{max_retries}): {type(e).__name__}: {e}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2)
+                        continue
+            
+            self.stats["files_failed"] += 1
+            return None
         except Exception as e:
-            print(f"        ❌ 上传异常: {e}")
+            print(f"        ❌ 文件处理异常: {type(e).__name__}: {e}")
             self.stats["files_failed"] += 1
             return None
     
