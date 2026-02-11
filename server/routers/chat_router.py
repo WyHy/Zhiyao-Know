@@ -17,6 +17,7 @@ from src.services.conversation_service import (
     create_thread_view,
     delete_thread_attachment_view,
     delete_thread_view,
+    delete_all_threads_view,
     list_thread_attachments_view,
     list_threads_view,
     update_thread_view,
@@ -636,6 +637,20 @@ async def delete_thread(
 ):
     """删除对话线程 (使用新存储系统)"""
     return await delete_thread_view(thread_id=thread_id, db=db, current_user_id=str(current_user.id))
+
+
+@chat.delete("/threads")
+async def delete_all_threads(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_required_user),
+):
+    """清空用户在指定智能体下的所有对话历史 (使用新存储系统)"""
+    return await delete_all_threads_view(
+        agent_id=agent_id,
+        db=db,
+        current_user_id=str(current_user.id),
+    )
 
 
 class ThreadUpdate(BaseModel):

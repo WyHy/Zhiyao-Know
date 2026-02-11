@@ -236,6 +236,31 @@ class ConversationRepository:
 
         return True
 
+    async def delete_all_conversations(
+        self, user_id: str, agent_id: str | None = None, soft_delete: bool = True
+    ) -> int:
+        """批量删除用户的对话线程"""
+        query = select(Conversation).where(Conversation.user_id == str(user_id))
+        if agent_id:
+            query = query.where(Conversation.agent_id == agent_id)
+        if soft_delete:
+            query = query.where(Conversation.status != "deleted")
+
+        result = await self.db.execute(query)
+        conversations = result.scalars().all()
+
+        count = 0
+        for conv in conversations:
+            if soft_delete:
+                conv.status = "deleted"
+            else:
+                await self.db.delete(conv)
+            count += 1
+
+        if count > 0:
+            await self.db.commit()
+        return count
+
     async def get_stats(self, conversation_id: int) -> ConversationStats | None:
         result = await self.db.execute(
             select(ConversationStats).where(ConversationStats.conversation_id == conversation_id)

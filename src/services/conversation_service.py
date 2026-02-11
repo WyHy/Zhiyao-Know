@@ -103,6 +103,22 @@ async def delete_thread_view(
     return {"message": "删除成功"}
 
 
+async def delete_all_threads_view(
+    *,
+    agent_id: str,
+    db: AsyncSession,
+    current_user_id: str,
+) -> dict:
+    if not agent_id:
+        raise HTTPException(status_code=422, detail="agent_id 不能为空")
+
+    conv_repo = ConversationRepository(db)
+    count = await conv_repo.delete_all_conversations(
+        user_id=str(current_user_id), agent_id=agent_id, soft_delete=True
+    )
+    return {"message": f"成功清空 {count} 条对话历史", "count": count}
+
+
 async def update_thread_view(
     *,
     thread_id: str,
