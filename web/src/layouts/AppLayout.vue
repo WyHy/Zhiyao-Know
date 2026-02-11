@@ -81,16 +81,16 @@ const mainList = computed(() => {
   const isAdmin = userStore.isAdmin
   const list = []
   
-  // // 智能体菜单（仅管理员可见）
-  // if (isAdmin) {
-  //   list.push({
-  //     name: '智能体',
-  //     path: '/agent',
-  //     icon: Bot,
-  //     activeIcon: Bot,
-  //     hidden: false
-  //   })
-  // }
+  // 智能体菜单（仅管理员可见）
+  if (isAdmin) {
+    list.push({
+      name: '智能体',
+      path: '/agent',
+      icon: Bot,
+      activeIcon: Bot,
+      hidden: false
+    })
+  }
   
   // // 知识图谱菜单（仅管理员可见）
   // if (isAdmin) {
