@@ -93,19 +93,8 @@ const columns = [
 const tableData = ref([
   {
     id: 1,
-    name: '国家能源局爬取',
-    url: 'https://www.nea.gov.cn/',
-    frequencyType: 'Hourly',
-    nextTime: '14:00',
-    enabled: false,
-    lastCollectionTime: '2025.12.31 15:00',
-    collectionStatus: 'success',
-    collectionResult: '成功提取25条'
-  },
-  {
-    id: 2,
-    name: '国家发改委爬取',
-    url: 'https://www.ndrc.gov.cn/',
+    name: '国家能源局',
+    url: 'http://www.nea.gov.cn/',
     frequencyType: 'Daily',
     nextTime: '14:00',
     enabled: true,
@@ -114,10 +103,10 @@ const tableData = ref([
     collectionResult: '成功提取25条'
   },
   {
-    id: 3,
-    name: '湖北省电力爬取',
-    url: 'http://www.sgcc.com.cn/',
-    frequencyType: 'Weekly',
+    id: 2,
+    name: '信用中国',
+    url: 'https://www.creditchina.gov.cn/',
+    frequencyType: 'Daily',
     nextTime: '14:00',
     enabled: true,
     lastCollectionTime: '2025.12.31 15:00',
@@ -129,7 +118,7 @@ const tableData = ref([
 const pagination = reactive({
   current: 1,
   pageSize: 10,
-  total: 3
+  total: tableData.value.length
 })
 
 const handleAdd = () => {

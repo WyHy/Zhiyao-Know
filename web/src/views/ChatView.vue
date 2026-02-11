@@ -1,7 +1,7 @@
 <template>
   <div class="chat-view">
     <!-- 顶部标签栏 -->
-    <div class="chat-header-tabs">
+    <div class="chat-header-tabs" v-if="false">
       <div class="tab-item" :class="{ active: true }">
         {{ currentAgentName || '大模型名称' }}
       </div>
@@ -17,14 +17,15 @@
           <h1 class="welcome-greeting">{{ greeting }}</h1>
           <p class="welcome-intro">我是你的智能合规管控小助手,请问现在能帮您做什么?</p>
           
-          <!-- 建议操作按钮 -->
+          <!-- 建议操作按钮（随机两条） -->
           <div class="suggested-actions">
-            <div class="action-button" @click="handleSuggestionClick('解析一下***话题的内容,形成摘要')">
-              <span>解析一下xxx话题的内容,形成摘要</span>
-              <span class="arrow-icon">→</span>
-            </div>
-            <div class="action-button" @click="handleSuggestionClick('帮我生成一份关于xxx的报告')">
-              <span>帮我生成一份关于xxx的报告</span>
+            <div
+              v-for="(question, index) in randomSuggestions"
+              :key="index"
+              class="action-button"
+              @click="handleSuggestionClick(question)"
+            >
+              <span>{{ question }}</span>
               <span class="arrow-icon">→</span>
             </div>
           </div>
@@ -66,7 +67,7 @@
         <!-- 底部输入区域 - 放在左侧内容区底部 -->
         <div class="chat-input-wrapper">
           <div class="chat-input-area">
-            <div class="input-icons">
+            <div class="input-icons" v-if="false">
               <a-tooltip title="切换智能体">
                 <div class="input-icon" @click="openAgentModal">
                   <Bot :size="20" />
@@ -460,6 +461,26 @@ const greeting = computed(() => {
     return '晚上好'
   }
 })
+
+// 欢迎区域随机建议问题
+const suggestionPool = [
+'电网建业、电力保供、市场化改革相关保障策略和机制','电网法律合规核心业务中制度建设与管理中相关管理规范及标准'
+]
+
+const randomSuggestions = ref([])
+
+const pickRandomSuggestions = () => {
+  const pool = [...suggestionPool]
+  // 简单洗牌
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+  }
+  randomSuggestions.value = pool.slice(0, 2)
+}
+
+// 初始化随机建议
+pickRandomSuggestions()
 
 // 分组对话列表（今天、七天内、三十天内）
 const groupedChats = computed(() => {
