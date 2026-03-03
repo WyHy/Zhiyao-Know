@@ -17,8 +17,8 @@ services:
       - ./.env:/app/.env
       - ./crawler_data:/app/data
     environment:
-      - CRAWLER_DATABASE_URL=${CRAWLER_DATABASE_URL:-sqlite+aiosqlite:///app/data/crawler.db}
-    command: uvicorn main:app --host 0.0.0.0 --port 5060
+      - CRAWLER_DATABASE_URL=${CRAWLER_DATABASE_URL:-sqlite+aiosqlite:////app/data/crawler.db}
+    command: sh -c "mkdir -p /app/data && uvicorn main:app --host 0.0.0.0 --port 5060"
 
   crawler-worker:
     image: registry.cn-beijing.aliyuncs.com/wyhy/mirrors:yuxi-crawler-0.1.dev
@@ -27,10 +27,14 @@ services:
       - ./.env:/app/.env
       - ./crawler_data:/app/data
     environment:
-      - CRAWLER_DATABASE_URL=${CRAWLER_DATABASE_URL:-sqlite+aiosqlite:///app/data/crawler.db}
+      - CRAWLER_DATABASE_URL=${CRAWLER_DATABASE_URL:-sqlite+aiosqlite:////app/data/crawler.db}
+    command: sh -c "mkdir -p /app/data && celery -A core.celery_app.celery_app worker --loglevel=info --concurrency=2"
 
   web:
     build: null
     image: registry.cn-beijing.aliyuncs.com/wyhy/mirrors:yuxi-web-0.5.dev
     pull_policy: always
     volumes: []
+    ports:
+      - "5173:80"
+    command: null
