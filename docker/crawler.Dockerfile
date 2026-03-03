@@ -20,6 +20,10 @@ RUN pip install --no-cache-dir -r /app/requirements.txt  -i https://pypi.tuna.ts
 RUN PLAYWRIGHT_DOWNLOAD_HOST=https://registry.npmmirror.com/-/binary/playwright \
     PLAYWRIGHT_DOWNLOAD_BASE_URL=https://registry.npmmirror.com/-/binary/playwright \
     crawl4ai-setup
+RUN set -eux; \
+    PLAYWRIGHT_DOWNLOAD_HOST=https://registry.npmmirror.com/-/binary/playwright \
+    PLAYWRIGHT_DOWNLOAD_BASE_URL=https://registry.npmmirror.com/-/binary/playwright \
+    python -m patchright install chromium || python -m patchright install chromium
 
 COPY crawler_service /app
 
