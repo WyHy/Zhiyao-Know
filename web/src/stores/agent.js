@@ -516,7 +516,7 @@ export const useAgentStore = defineStore(
     persist: {
       key: 'agent-store',
       storage: localStorage,
-      pick: ['selectedAgentConfigId']
+      pick: ['selectedAgentId', 'selectedAgentConfigId']
     }
   }
 )
