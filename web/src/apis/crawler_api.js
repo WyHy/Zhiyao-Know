@@ -1,9 +1,7 @@
 import { apiGet, apiPost, apiPut, apiDelete } from './base'
 
-// 爬虫服务统一网关前缀：
-// 前端请求 /api_v1/...，由 Vite 代理到后端 http://crawler-host/api/v1/...
-// 具体代理规则见 vite.config.js 中 '^/api_v1' 配置。
-const crawlerBase = 'http://8.148.22.98/crawler-api'
+// 爬虫服务统一网关前缀（避免硬编码 IP，统一走同域代理）
+const crawlerBase = '/crawler-api'
 
 const buildQuery = (params = {}) => {
   const search = new URLSearchParams()
@@ -105,4 +103,3 @@ export const crawlerApi = {
     return apiGet(`${crawlerBase}/dashboard/alerts`, {}, false)
   }
 }
-

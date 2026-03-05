@@ -10,130 +10,81 @@
     <a-tabs v-model:activeKey="activeTab" class="main-tabs" tab-position="left">
       <!-- 监控配置：左侧监控目标 + 右侧任务执行记录 -->
       <a-tab-pane key="center" tab="监控配置">
-        <div class="center-layout">
-          <div class="task-list-card">
-            <div class="card-header">
-              <div class="card-title">监控目标</div>
-              <a-button type="primary" size="small" @click="openCreate">新增</a-button>
+        <div class="task-center-card">
+          <div class="toolbar between">
+            <div class="toolbar-left">
+              <a-input
+                v-model:value="taskQuery"
+                allow-clear
+                placeholder="搜索任务名称或URL"
+                style="width: 260px"
+              />
+              <a-select v-model:value="taskStatus" style="width: 140px">
+                <a-select-option value="all">全部状态</a-select-option>
+                <a-select-option value="active">启用</a-select-option>
+                <a-select-option value="paused">暂停</a-select-option>
+              </a-select>
+              <a-button @click="loadTasks">查询</a-button>
             </div>
-            <div class="task-list" v-if="taskList.length">
-              <div
-                v-for="item in taskList"
-                :key="item.id"
-                class="task-item"
-                :class="{ active: selectedTaskId === item.id }"
-                @click="selectTask(item)"
-              >
-                <div class="task-item-main">
-                  <div class="task-name">{{ item.name }}</div>
-                  <a-tag :color="item.status === 'active' ? 'green' : 'default'">
-                    {{ item.status === 'active' ? '启用' : '暂停' }}
-                  </a-tag>
-                </div>
-                <div class="task-url">{{ item.url }}</div>
-                <div class="task-meta">
-                  <div>模式：{{ modeText(item.mode) }}</div>
-                  <div>频率：{{ frequencyText(item.frequency) }}</div>
-                </div>
-              </div>
-            </div>
-            <div v-else class="empty-tip"></div>
+            <a-button type="primary" @click="openCreate">新增监控</a-button>
           </div>
 
-          <div class="job-list-card">
-            <div class="card-header">
-              <div>
-                <div class="card-title">
-                  {{ selectedTask ? selectedTask.name : '任务执行记录' }}
-                </div>
-                <div class="card-subtitle" v-if="selectedTask">{{ selectedTask.url }}</div>
-                <div class="card-subtitle" v-else>请先在左侧选择一个监控任务</div>
-              </div>
-              <a-space v-if="selectedTask">
-                <a-button size="small" @click="runTask(selectedTask)" :loading="running">
-                  立即运行
-                </a-button>
-                <a-button size="small" @click="editTask(selectedTask)">编辑</a-button>
-                <a-button size="small" @click="viewResults(selectedTask)">历史数据</a-button>
-              </a-space>
-            </div>
-
-            <div class="card-body">
-              <div class="table-body-scroll">
-                <a-table
-                  v-if="selectedTask"
-                  :data-source="centerJobList"
-                  :columns="centerJobColumns"
-                  row-key="job_id"
-                  size="small"
-                  :pagination="false"
-                  :scroll="{ x: 900, y: 500 }"
-                >
-                  <template #bodyCell="{ column, record }">
-                    <template v-if="column.key === 'status'">
-                      <a-tag
-                        :color="
-                          record.status === 'success'
-                            ? 'green'
-                            : record.status === 'failed'
-                              ? 'red'
-                              : 'orange'
-                        "
-                      >
-                        {{ record.status }}
-                      </a-tag>
-                    </template>
-                    <template v-else-if="column.key === 'progress'">
-                      <div class="job-progress-cell">
-                        <a-progress
-                          :percent="jobProgress(record)"
-                          :size="'small'"
-                          :status="
-                            record.status === 'failed'
-                              ? 'exception'
-                              : record.status === 'success'
-                                ? 'success'
-                                : 'active'
-                          "
-                        />
-                        <div class="progress-meta">
-                          总 {{ record.total_pages || 0 }} / 成功 {{ record.success_pages || 0 }} /
-                          失败 {{ record.failed_pages || 0 }} / 跳过 {{ record.skipped_pages || 0 }}
-                        </div>
-                        <div class="progress-meta">
-                          列表页 {{ record.list_page_count || 0 }} / 发现链接
-                          {{ record.discovered_links || 0 }} / 有效链接
-                          {{ record.effective_links || 0 }}
-                        </div>
-                      </div>
-                    </template>
-                    <template v-else-if="column.key === 'updated_at'">
-                      {{ formatTime(record.updated_at) }}
-                    </template>
-                    <template v-else-if="column.key === 'actions'">
-                      <a-space size="small">
-                        <a-button type="link" size="small" @click="openJobPages(record)">
-                          页面日志
-                        </a-button>
-                        <a-button type="link" size="small" @click="openJobLogs(record)">
-                          执行日志
-                        </a-button>
-                      </a-space>
-                    </template>
+          <div class="card-body">
+            <div class="table-body-scroll">
+              <a-table
+                :data-source="taskList"
+                :columns="centerTaskColumns"
+                row-key="id"
+                size="small"
+                :pagination="false"
+                :scroll="{ x: 1400, y: 560 }"
+              >
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'name'">
+                    <div class="target-cell">
+                      <div class="target-name">{{ record.name }}</div>
+                      <div class="target-url">{{ record.url }}</div>
+                    </div>
                   </template>
-                </a-table>
-              </div>
-              <div class="table-pagination">
-                <a-pagination
-                  :current="centerJobPagination.current"
-                  :pageSize="centerJobPagination.pageSize"
-                  :total="centerJobPagination.total"
-                  :showSizeChanger="true"
-                  :pageSizeOptions="['10', '20', '50', '100']"
-                  @change="onCenterJobPageChange"
-                  @showSizeChange="onCenterJobPageSizeChange"
-                />
-              </div>
+                  <template v-else-if="column.key === 'mode'">
+                    {{ modeText(record.mode) }}
+                  </template>
+                  <template v-else-if="column.key === 'frequency'">
+                    {{ frequencyText(record.frequency) }}
+                  </template>
+                  <template v-else-if="column.key === 'status'">
+                    <a-tag :color="record.status === 'active' ? 'green' : 'default'">
+                      {{ record.status === 'active' ? '启用' : '暂停' }}
+                    </a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'created_at'">
+                    {{ formatTime(record.created_at) }}
+                  </template>
+                  <template v-else-if="column.key === 'last_run_time'">
+                    {{ formatTime(record.last_run_time) || '-' }}
+                  </template>
+                  <template v-else-if="column.key === 'last_items_count'">
+                    {{ record.last_items_count ?? 0 }}
+                  </template>
+                  <template v-else-if="column.key === 'actions'">
+                    <a-space size="small">
+                      <a-button type="link" size="small" @click="runTask(record)" :loading="running">
+                        立即运行
+                      </a-button>
+                      <a-button type="link" size="small" @click="editTask(record)">编辑</a-button>
+                      <a-button type="link" size="small" @click="viewResults(record)">历史</a-button>
+                      <a-switch
+                        size="small"
+                        :checked="record.status === 'active'"
+                        checked-children="启用"
+                        un-checked-children="暂停"
+                        @change="(checked) => toggleTask(record, checked)"
+                      />
+                      <a-button danger type="link" size="small" @click="deleteTask(record)">删除</a-button>
+                    </a-space>
+                  </template>
+                </template>
+              </a-table>
             </div>
           </div>
         </div>
@@ -382,6 +333,128 @@
         </div>
       </a-tab-pane>
     </a-tabs>
+
+    <!-- 新增/编辑任务 -->
+    <a-modal
+      v-model:open="taskDialogVisible"
+      :title="isEdit ? '编辑任务' : '新增任务'"
+      width="900px"
+      @ok="saveTask"
+      :okText="isEdit ? '保存' : '创建'"
+      cancelText="取消"
+      :confirmLoading="savingTask"
+      destroyOnClose
+    >
+      <a-form layout="vertical">
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="任务名称">
+              <a-input v-model:value="taskForm.name" placeholder="请输入任务名称" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="任务状态">
+              <a-select v-model:value="taskForm.status">
+                <a-select-option value="active">启用</a-select-option>
+                <a-select-option value="paused">暂停</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-form-item label="目标 URL">
+          <a-input v-model:value="taskForm.url" placeholder="https://example.com/list" />
+        </a-form-item>
+
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="采集模式">
+              <a-select v-model:value="taskForm.mode">
+                <a-select-option value="auto">智能判断</a-select-option>
+                <a-select-option value="list">列表监控</a-select-option>
+                <a-select-option value="scrape">单页抓取</a-select-option>
+                <a-select-option value="crawl">深度爬取</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="采集频率">
+              <a-radio-group v-model:value="taskForm.schedule_type">
+                <a-radio value="manual">手动</a-radio>
+                <a-radio value="scheduled">定时</a-radio>
+              </a-radio-group>
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-row v-if="taskForm.schedule_type === 'scheduled'" :gutter="16">
+          <a-col :span="8">
+            <a-form-item label="周期类型">
+              <a-select v-model:value="taskForm.schedule_cycle">
+                <a-select-option value="hourly">按小时</a-select-option>
+                <a-select-option value="daily">按天</a-select-option>
+                <a-select-option value="weekly">按周</a-select-option>
+                <a-select-option value="cron">Cron</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="8" v-if="taskForm.schedule_cycle === 'hourly'">
+            <a-form-item label="间隔小时">
+              <a-input-number v-model:value="taskForm.schedule_interval" :min="1" :max="24" style="width: 100%" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8" v-if="taskForm.schedule_cycle === 'daily' || taskForm.schedule_cycle === 'weekly'">
+            <a-form-item label="执行时间">
+              <a-time-picker v-model:value="taskForm.schedule_time" value-format="HH:mm" format="HH:mm" style="width: 100%" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8" v-if="taskForm.schedule_cycle === 'weekly'">
+            <a-form-item label="周几">
+              <a-select v-model:value="taskForm.schedule_weekday">
+                <a-select-option :value="0">周日</a-select-option>
+                <a-select-option :value="1">周一</a-select-option>
+                <a-select-option :value="2">周二</a-select-option>
+                <a-select-option :value="3">周三</a-select-option>
+                <a-select-option :value="4">周四</a-select-option>
+                <a-select-option :value="5">周五</a-select-option>
+                <a-select-option :value="6">周六</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="24" v-if="taskForm.schedule_cycle === 'cron'">
+            <a-form-item label="Cron 表达式">
+              <a-input v-model:value="taskForm.custom_cron" placeholder="例如：0 */2 * * *" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-form-item label="详情链接过滤（正则，可选）">
+          <a-input v-model:value="taskForm.detail_url_pattern" placeholder="^https?://(www\\.)?nea\\.gov\\.cn/.+\\.html?$" />
+        </a-form-item>
+
+        <a-row :gutter="16">
+          <a-col :span="8">
+            <a-form-item label="最大深度">
+              <a-input-number v-model:value="taskForm.max_depth" :min="1" :max="5" style="width: 100%" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="并发数">
+              <a-input-number v-model:value="taskForm.concurrency" :min="1" :max="20" style="width: 100%" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="代理">
+              <a-switch v-model:checked="taskForm.use_proxy" checked-children="启用" un-checked-children="关闭" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-form-item label="Schema（JSON）">
+          <a-textarea v-model:value="taskForm.schemaText" :rows="8" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
 
     <!-- 历史数据弹窗 -->
     <a-modal
@@ -1204,12 +1277,15 @@ onBeforeUnmount(() => {
   }
 })
 
-const centerJobColumns = [
-  { title: 'job_id', dataIndex: 'job_id', key: 'job_id', width: 200, ellipsis: true },
+const centerTaskColumns = [
+  { title: '监控目标', key: 'name', width: 360 },
+  { title: '模式', key: 'mode', width: 110 },
+  { title: '频率', key: 'frequency', width: 140 },
   { title: '状态', key: 'status', width: 90 },
-  { title: '进度', key: 'progress', width: 260 },
-  { title: '更新时间', key: 'updated_at', width: 170 },
-  { title: '操作', key: 'actions', width: 180, fixed: 'right' }
+  { title: '创建时间', key: 'created_at', width: 180 },
+  { title: '上次执行', key: 'last_run_time', width: 180 },
+  { title: '上次条数', key: 'last_items_count', width: 100 },
+  { title: '操作', key: 'actions', width: 360, fixed: 'right' }
 ]
 
 const jobColumns = [
@@ -1286,25 +1362,8 @@ const jobPageColumns = [
   overflow: hidden;
 }
 
-.center-layout {
-  display: flex;
-  gap: 16px;
+.task-center-card {
   height: 100%;
-}
-
-.task-list-card {
-  flex: 0 0 320px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px;
-  background: #f9fafb;
-  display: flex;
-  flex-direction: column;
-  height: 680px; // 固定高度，内部列表滚动
-}
-
-.job-list-card {
-  flex: 1;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 12px;
@@ -1328,61 +1387,6 @@ const jobPageColumns = [
     font-size: 12px;
     color: #6b7280;
     margin-top: 2px;
-  }
-}
-
-.task-list {
-  margin-top: 8px;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.task-item {
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
-  padding: 8px;
-  cursor: pointer;
-  background: #ffffff;
-  transition: all 0.15s ease-in-out;
-  flex: 0 0 calc(50% - 4px);
-  box-sizing: border-box;
-
-  &.active {
-    border-color: #3b82f6;
-    background: #eff6ff;
-  }
-
-  &:hover {
-    border-color: #3b82f6;
-  }
-
-  .task-item-main {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .task-name {
-    font-size: 13px;
-    font-weight: 500;
-    color: #111827;
-  }
-
-  .task-url {
-    margin-top: 2px;
-    font-size: 12px;
-    color: #6b7280;
-    word-break: break-all;
-  }
-
-  .task-meta {
-    margin-top: 2px;
-    font-size: 12px;
-    color: #9ca3af;
   }
 }
 

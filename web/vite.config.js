@@ -14,11 +14,15 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: {
         '^/api': {
-          // 生产环境
-          target: env.VITE_API_URL || 'http://8.148.22.98/',
-          // 颖哥本地环境，用于测试
-          // target: env.VITE_API_URL || 'https://r4x8gzlef8.fy.takin.cc/',
+          // 开发默认走本地 api 容器，线上可通过 VITE_API_URL 覆盖
+          target: env.VITE_API_URL || 'http://127.0.0.1:5050',
           changeOrigin: true
+        },
+        '^/crawler-api': {
+          // 开发环境直连爬虫服务（生产环境由 nginx 处理 /crawler-api 反代）
+          target: env.VITE_CRAWLER_URL || 'http://127.0.0.1:18060',
+          changeOrigin: true,
+          rewrite: path => path.replace(/^\/crawler-api/, '/api/v1')
         }
       },
       watch: {
@@ -29,6 +33,4 @@ export default defineConfig(({ mode }) => {
     }
   }
 })
-
-
 

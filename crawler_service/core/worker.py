@@ -466,6 +466,20 @@ async def run_job_by_id(job_id: str):
         job.updated_at = datetime.utcnow()
         await session.commit()
 
+        # 先写入一条运行中日志，便于前端在执行期间实时看到任务记录。
+        log = Log(
+            task_id=job.task_id,
+            job_id=job.id,
+            execution_time=datetime.utcnow(),
+            status="running",
+            error_message=None,
+            detail_log="任务已启动，正在执行中",
+            items_count=0,
+            token_usage=0,
+        )
+        session.add(log)
+        await session.commit()
+
         items_count = 0
         token_usage = 0
         mode = "scrape"
@@ -538,17 +552,12 @@ async def run_job_by_id(job_id: str):
                 await session.commit()
 
         detail_log = await _build_detail_log(job_id=job.id, mode=mode, list_meta=list_meta)
-        log = Log(
-            task_id=job.task_id,
-            job_id=job.id,
-            execution_time=now,
-            status=job.status,
-            error_message=job.error_message,
-            detail_log=detail_log,
-            items_count=items_count,
-            token_usage=token_usage,
-        )
-        session.add(log)
+        log.execution_time = now
+        log.status = job.status
+        log.error_message = job.error_message
+        log.detail_log = detail_log
+        log.items_count = items_count
+        log.token_usage = token_usage
         await session.commit()
 
 
