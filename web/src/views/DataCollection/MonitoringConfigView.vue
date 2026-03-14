@@ -383,6 +383,202 @@
       </a-tab-pane>
     </a-tabs>
 
+    <!-- 新增/编辑监控任务弹窗 -->
+    <a-modal
+      v-model:open="taskDialogVisible"
+      :title="isEdit ? '编辑任务' : '新增任务'"
+      width="720px"
+      :confirm-loading="savingTask"
+      :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
+      @ok="saveTask"
+    >
+      <a-form layout="vertical" class="task-form-modal">
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="任务名称">
+              <a-input v-model:value="taskForm.name" placeholder="请输入任务名称" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="执行方式">
+              <a-select v-model:value="taskForm.schedule_type" style="width: 100%">
+                <a-select-option value="manual">单次（手动触发）</a-select-option>
+                <a-select-option value="scheduled">定时自动执行</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-form-item label="目标 URL">
+          <a-input v-model:value="taskForm.url" placeholder="https://..." />
+        </a-form-item>
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="采集模式">
+              <a-select v-model:value="taskForm.mode" style="width: 100%">
+                <a-select-option value="auto">智能判断（推荐）</a-select-option>
+                <a-select-option value="scrape">单页抓取</a-select-option>
+                <a-select-option value="list">列表监控</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="详情链接过滤 (detail_url_pattern)">
+              <a-input v-model:value="taskForm.detail_url_pattern" placeholder=".*gongshi.*\.htm" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <template v-if="taskForm.schedule_type === 'scheduled'">
+          <a-row :gutter="16">
+            <a-col :span="8">
+              <a-form-item label="周期类型">
+                <a-select v-model:value="taskForm.schedule_cycle" style="width: 100%">
+                  <a-select-option value="hourly">每小时</a-select-option>
+                  <a-select-option value="daily">每天</a-select-option>
+                  <a-select-option value="weekly">每周</a-select-option>
+                  <a-select-option value="cron">自定义 Cron</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col v-if="taskForm.schedule_cycle === 'hourly'" :span="8">
+              <a-form-item label="间隔（小时）">
+                <a-input-number v-model:value="taskForm.schedule_interval" :min="1" :max="24" style="width: 100%" />
+              </a-form-item>
+            </a-col>
+            <a-col v-if="taskForm.schedule_cycle === 'daily' || taskForm.schedule_cycle === 'weekly'" :span="8">
+              <a-form-item label="执行时间">
+                <a-input v-model:value="taskForm.schedule_time" placeholder="09:00" />
+              </a-form-item>
+            </a-col>
+            <a-col v-if="taskForm.schedule_cycle === 'weekly'" :span="8">
+              <a-form-item label="星期几">
+                <a-select v-model:value="taskForm.schedule_weekday" style="width: 100%">
+                  <a-select-option :value="1">周一</a-select-option>
+                  <a-select-option :value="2">周二</a-select-option>
+                  <a-select-option :value="3">周三</a-select-option>
+                  <a-select-option :value="4">周四</a-select-option>
+                  <a-select-option :value="5">周五</a-select-option>
+                  <a-select-option :value="6">周六</a-select-option>
+                  <a-select-option :value="0">周日</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col v-if="taskForm.schedule_cycle === 'cron'" :span="8">
+              <a-form-item label="Cron 表达式">
+                <a-input v-model:value="taskForm.custom_cron" placeholder="0 9 * * 1-5" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </template>
+        <a-row :gutter="16">
+          <a-col :span="8">
+            <a-form-item label="最大爬取深度">
+              <a-input-number v-model:value="taskForm.max_depth" :min="1" :max="10" style="width: 100%" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="并发数">
+              <a-input-number v-model:value="taskForm.concurrency" :min="1" :max="20" style="width: 100%" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="任务状态">
+              <a-select v-model:value="taskForm.status" style="width: 100%">
+                <a-select-option value="active">启用</a-select-option>
+                <a-select-option value="paused">暂停</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-collapse>
+          <a-collapse-panel key="advanced" header="高级配置（可选）">
+            <a-row :gutter="16">
+              <a-col :span="8">
+                <a-form-item label="缓存策略">
+                  <a-select v-model:value="taskForm.options.cache_mode" style="width: 100%">
+                    <a-select-option value="bypass">绕过缓存</a-select-option>
+                    <a-select-option value="enabled">启用读写缓存</a-select-option>
+                    <a-select-option value="read_only">只读缓存</a-select-option>
+                    <a-select-option value="write_only">只写缓存</a-select-option>
+                    <a-select-option value="disabled">禁用缓存</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="页面等待策略">
+                  <a-select v-model:value="taskForm.options.wait_until" style="width: 100%">
+                    <a-select-option value="domcontentloaded">DOM 加载完成</a-select-option>
+                    <a-select-option value="load">页面 load 完成</a-select-option>
+                    <a-select-option value="networkidle">网络空闲</a-select-option>
+                    <a-select-option value="commit">请求提交完成</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="页面超时(毫秒)">
+                  <a-input-number
+                    v-model:value="taskForm.options.page_timeout"
+                    :min="1000"
+                    :max="300000"
+                    :step="1000"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item label="等待元素 (CSS 选择器)">
+                  <a-input v-model:value="taskForm.options.wait_for" placeholder=".article-content" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="自定义 User-Agent">
+                  <a-input v-model:value="taskForm.options.user_agent" placeholder="Mozilla/5.0 ..." />
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-row :gutter="16">
+              <a-col :span="8">
+                <a-form-item label="仅提取文本">
+                  <a-switch v-model:checked="taskForm.options.only_text" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="移除表单区域">
+                  <a-switch v-model:checked="taskForm.options.remove_forms" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="排除外部链接">
+                  <a-switch v-model:checked="taskForm.options.exclude_external_links" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-row :gutter="16">
+              <a-col :span="8">
+                <a-form-item label="模拟用户行为">
+                  <a-switch v-model:checked="taskForm.options.simulate_user" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="智能模式 (magic)">
+                  <a-switch v-model:checked="taskForm.options.magic" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="保留图片内容">
+                  <a-switch v-model:checked="taskForm.options.include_images" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </a-collapse-panel>
+        </a-collapse>
+        <a-form-item label="提取结构定义 (Schema JSON)">
+          <a-textarea v-model:value="taskForm.schemaText" :rows="8" placeholder='{"title":"string","content":"markdown",...}' />
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
     <!-- 历史数据弹窗 -->
     <a-modal
       v-model:open="resultDialogVisible"
@@ -1267,6 +1463,7 @@ const jobPageColumns = [
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   padding: 16px;
   box-sizing: border-box;
+  min-width: 0; /* 小屏下允许收缩，避免整页被撑宽溢出 */
 }
 
 .page-header {
@@ -1279,21 +1476,41 @@ const jobPageColumns = [
 .main-tabs {
   margin-top: 8px;
   flex: 1;
+  min-width: 0; /* 小屏下允许收缩，表格区域出现横向滚动而非整页溢出 */
 }
 
 :deep(.ant-tabs-content-holder) {
   height: 100%;
   overflow: hidden;
+  min-width: 0;
+}
+
+:deep(.ant-tabs-content) {
+  min-width: 0;
+}
+
+:deep(.ant-tabs-tabpane) {
+  min-width: 0;
+}
+
+/* 缩短 tabs 过渡，避免小屏下切换“贼慢” */
+:deep(.ant-tabs-ink-bar) {
+  transition: left 0.15s ease, top 0.15s ease, width 0.15s ease, height 0.15s ease !important;
+}
+:deep(.ant-tabs-tabpane-active) {
+  animation-duration: 0.12s;
 }
 
 .center-layout {
   display: flex;
   gap: 16px;
   height: 100%;
+  min-width: 0;
 }
 
 .task-list-card {
-  flex: 0 0 320px;
+  flex: 0 1 320px; /* 窄屏下可收缩，避免右侧表格区域过窄 */
+  min-width: 200px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 12px;
@@ -1305,6 +1522,8 @@ const jobPageColumns = [
 
 .job-list-card {
   flex: 1;
+  min-width: 0; /* 小屏下收缩，内部表格横向滚动 */
+  overflow: hidden;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 12px;
@@ -1347,7 +1566,7 @@ const jobPageColumns = [
   padding: 8px;
   cursor: pointer;
   background: #ffffff;
-  transition: all 0.15s ease-in-out;
+  transition: border-color 0.08s ease, background-color 0.08s ease; /* 缩短过渡，避免“贼慢” */
   flex: 0 0 calc(50% - 4px);
   box-sizing: border-box;
 
@@ -1404,12 +1623,21 @@ const jobPageColumns = [
 .card-body {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .table-body-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: auto; /* 同时允许横向滚动，避免在部分环境下表内 scroll 不生效时“滑不动” */
+}
+
+/* 兜底：确保表格内容区可横向滚动且有最小宽度，避免只显示第一列（如样式未加载或浏览器差异） */
+.table-body-scroll :deep(.ant-table-content) {
+  overflow-x: auto !important;
+}
+.table-body-scroll :deep(.ant-table) {
+  min-width: 900px;
 }
 
 .table-pagination {
