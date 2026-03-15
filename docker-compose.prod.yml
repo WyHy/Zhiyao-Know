@@ -60,7 +60,7 @@ services:
       - app-network
     environment:
       - NODE_ENV=production
-      - VITE_API_URL=http://api:5050
+      - VITE_API_URL=https://8.148.22.98:80
     command: nginx -g "daemon off;"
     restart: unless-stopped
 
