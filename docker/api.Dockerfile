@@ -49,6 +49,9 @@ COPY ../.python-version /app/.python-version
 COPY ../uv.lock /app/uv.lock
 COPY ../.wheels /tmp/wheels
 
+# uv.lock 历史上由清华源生成，这里统一替换为阿里源，避免构建时 TLS EOF
+RUN sed -i 's|https://pypi.tuna.tsinghua.edu.cn|https://mirrors.aliyun.com/pypi|g' /app/uv.lock
+
 # 方法一：优先使用仓库内预下载的 CPU wheel，避免构建时反复拉取 torch 大包
 RUN set -ex \
     && if ls /tmp/wheels/torch-*.whl /tmp/wheels/torchvision-*.whl >/dev/null 2>&1; then \

@@ -19,7 +19,7 @@ log() {
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/offline_bundle.sh export [--bundle-name NAME] [--compose-files "a.yml,b.yml"] [--with-env yes|no]
+  scripts/offline_bundle.sh export [--bundle-name NAME] [--compose-files "a.yml,b.yml"] [--with-env yes|no] [--target-platform linux/amd64]
   scripts/offline_bundle.sh import --bundle PATH [--compose-files "a.yml,b.yml"] [--up yes|no]
 
 Examples:
@@ -96,6 +96,7 @@ export_bundle() {
   local bundle_name="yuxi-offline-$(timestamp)"
   local compose_raw="docker-compose.remote.full.yml"
   local with_env="yes"
+  local target_platform="${TARGET_PLATFORM:-linux/amd64}"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -105,6 +106,8 @@ export_bundle() {
         compose_raw="${2:?missing compose files}"; shift 2 ;;
       --with-env)
         with_env="${2:?missing with-env value}"; shift 2 ;;
+      --target-platform)
+        target_platform="${2:?missing target platform}"; shift 2 ;;
       -h|--help)
         usage; exit 0 ;;
       *)
@@ -145,6 +148,25 @@ export_bundle() {
       fi
     fi
   done
+
+  # Validate image architecture before docker save.
+  local expected_os="${target_platform%%/*}"
+  local expected_arch="${target_platform##*/}"
+  local mismatch=()
+  for img in "${images[@]}"; do
+    local got_arch got_os
+    got_arch="$(docker image inspect "${img}" --format '{{.Architecture}}')"
+    got_os="$(docker image inspect "${img}" --format '{{.Os}}')"
+    if [[ "${got_arch}" != "${expected_arch}" || "${got_os}" != "${expected_os}" ]]; then
+      mismatch+=("${img} -> ${got_arch}/${got_os}")
+    fi
+  done
+  if [[ "${#mismatch[@]}" -gt 0 ]]; then
+    echo "Found non-${target_platform} images, abort export:" >&2
+    printf '  %s\n' "${mismatch[@]}" >&2
+    echo "Tip: repull third-party images with '--platform ${target_platform}' and rebuild custom images with buildx." >&2
+    exit 1
+  fi
 
   log "Saving images to ${bundle_dir}/images.tar (this may take a while)"
   docker save -o "${bundle_dir}/images.tar" "${images[@]}"

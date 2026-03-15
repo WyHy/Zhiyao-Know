@@ -16,7 +16,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 COPY crawler_service/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt  -i https://pypi.tuna.tsinghua.edu.cn/simple
+RUN pip install --no-cache-dir -r /app/requirements.txt -i https://mirrors.aliyun.com/pypi/simple
 RUN PLAYWRIGHT_DOWNLOAD_HOST=https://registry.npmmirror.com/-/binary/playwright \
     PLAYWRIGHT_DOWNLOAD_BASE_URL=https://registry.npmmirror.com/-/binary/playwright \
     crawl4ai-setup
