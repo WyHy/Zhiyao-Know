@@ -76,10 +76,14 @@ export const agentApi = {
    * 获取智能体历史消息
    * @param {string} agentId - 智能体ID
    * @param {string} threadId - 会话ID
+   * @param {Object} options - 可选参数，如 { agent_config_id }
    * @returns {Promise} - 历史消息
    */
-  getAgentHistory: (agentId, threadId) =>
-    apiGet(`/api/chat/agent/${agentId}/history?thread_id=${threadId}`),
+  getAgentHistory: (agentId, threadId, options = {}) => {
+    const params = new URLSearchParams({ thread_id: threadId })
+    if (options.agent_config_id != null) params.set('agent_config_id', String(options.agent_config_id))
+    return apiGet(`/api/chat/agent/${agentId}/history?${params}`)
+  },
 
   /**
    * 获取指定会话的 AgentState
@@ -231,18 +235,20 @@ export const threadApi = {
   /**
    * 获取对话线程列表
    * @param {string} agentId - 智能体ID
+   * @param {Object} options - 可选参数，如 { agent_config_id }
    * @returns {Promise} - 对话线程列表
    */
-  getThreads: (agentId) => {
-    const url = `/api/chat/threads?agent_id=${agentId}`
-    return apiGet(url)
+  getThreads: (agentId, options = {}) => {
+    const params = new URLSearchParams({ agent_id: agentId })
+    if (options.agent_config_id != null) params.set('agent_config_id', String(options.agent_config_id))
+    return apiGet(`/api/chat/threads?${params}`)
   },
 
   /**
    * 创建新对话线程
    * @param {string} agentId - 智能体ID
    * @param {string} title - 对话标题
-   * @param {Object} metadata - 元数据
+   * @param {Object} metadata - 元数据，可含 agent_config_id 等
    * @returns {Promise} - 创建结果
    */
   createThread: (agentId, title, metadata) =>

@@ -104,6 +104,19 @@ const router = createRouter({
       ]
     },
     {
+      path: '/chat-with-agent',
+      name: 'chat-with-agent',
+      component: AppLayout,
+      children: [
+        {
+          path: '',
+          name: 'ChatWithAgentComp',
+          component: () => import('../views/ChatWithAgentView.vue'),
+          meta: { keepAlive: true, requiresAuth: true }
+        }
+      ]
+    },
+    {
       path: '/data-collection',
       name: 'data-collection',
       component: AppLayout,

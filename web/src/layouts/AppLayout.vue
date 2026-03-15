@@ -111,7 +111,16 @@ const mainList = computed(() => {
     activeIcon: MessageCircle,
     hidden: false
   })
-  
+
+  // 营销菜单（带选择智能体按钮，固定 HuizhouPowerQAAgent，所有用户可见）
+  list.push({
+    name: '营销',
+    path: '/chat-with-agent',
+    icon: Bot,
+    activeIcon: Bot,
+    hidden: false
+  })
+
   // 知识库菜单（所有用户可见）
   list.push({
     name: '知识库',
