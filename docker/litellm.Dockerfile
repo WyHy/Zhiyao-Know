@@ -3,15 +3,16 @@ FROM ${PYTHON_BASE_IMAGE}
 
 WORKDIR /app
 
-ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+ARG PIP_TRUSTED_HOST=mirrors.aliyun.com
 
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 ENV PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
 ENV PIP_NO_CACHE_DIR=1
 
 RUN python -m pip install -U pip && \
-    pip install "litellm[proxy]"
+    pip install "litellm[proxy]" tiktoken && \
+    python -c "import tiktoken"
 
 EXPOSE 8010
 
