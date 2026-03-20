@@ -84,11 +84,11 @@ nvidia-smi
 
 ```bash
 sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+curl -fsSL https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
 echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu \
   $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 ```
@@ -135,11 +135,13 @@ docker info | rg "Registry Mirrors" -n -A 4
 ## 4. 安装 NVIDIA Container Toolkit（让容器可用 GPU）
 
 ```bash
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+(curl -fsSL https://mirrors.tuna.tsinghua.edu.cn/github-raw/NVIDIA/libnvidia-container/gh-pages/gpgkey \
+  || curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey) | \
   sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
 
-curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+((curl -fsSL https://mirrors.tuna.tsinghua.edu.cn/github-raw/NVIDIA/libnvidia-container/gh-pages/stable/deb/nvidia-container-toolkit.list \
+  || curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list) | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g') | \
   sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
 
 sudo apt update
@@ -184,6 +186,8 @@ mkdir -p /opt/yuxi-know/Zhiyao-Know/models/Qwen
 ```bash
 sudo apt install -y python3-pip
 python3 -m pip install -U modelscope
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 ### 6.3 登录并下载模型（按选择下载）
@@ -355,6 +359,81 @@ docker logs -f vllm-qwen35-35b-a3b-fp8
   - `Qwen/Qwen3.5-35B-A3B-FP8`（如果使用 qwen35）
   - `Qwen/Qwen3-Embedding-0.6B`
   - `Qwen/Qwen3-Reranker-0.6B`
+
+### 11.5 根分区满了，但 `lsblk` 看起来磁盘很大
+
+典型现象：
+
+- `lsblk` 显示磁盘 / LVM 分区很大（如 800G+）
+- 但 `df -h /` 仍然 100%
+
+原因通常是：**LVM 逻辑卷扩了，但文件系统没有扩**，或扩容时命令路径写错。
+
+先确认根分区设备与文件系统：
+
+```bash
+findmnt -no SOURCE,FSTYPE /
+df -hT /
+sudo lvs
+sudo vgs
+```
+
+> 常见命令拼写错误：应使用 `df -h`，不是 `dsk -h`。
+
+#### 11.5.1 一步扩容（推荐）
+
+```bash
+sudo lvextend -r -l +100%FREE /dev/ubuntu-vg/ubuntu-lv
+df -h /
+```
+
+说明：
+
+- `-r` 会尝试自动扩展文件系统
+- 设备路径建议用 `/dev/ubuntu-vg/ubuntu-lv`
+- 也可用 `/dev/mapper/ubuntu--vg-ubuntu--lv`
+
+#### 11.5.2 `lsblk` 已变大，但 `df -h` 仍没变
+
+这表示需要手动扩文件系统：
+
+```bash
+findmnt -no FSTYPE /
+```
+
+- 若为 `ext4`：
+
+```bash
+sudo resize2fs /dev/ubuntu-vg/ubuntu-lv
+```
+
+- 若为 `xfs`：
+
+```bash
+sudo xfs_growfs /
+```
+
+然后再次检查：
+
+```bash
+df -h /
+```
+
+#### 11.5.3 仍然显示空间不足
+
+检查是否有“已删除但仍被进程占用”的大文件：
+
+```bash
+sudo lsof +L1
+```
+
+如果有，重启对应进程/容器后空间会释放。
+
+若文件系统是 ext4，也可适当降低保留块（谨慎）：
+
+```bash
+sudo tune2fs -m 1 /dev/ubuntu-vg/ubuntu-lv
+```
 
 ---
 
