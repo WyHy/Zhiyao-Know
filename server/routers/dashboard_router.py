@@ -409,6 +409,7 @@ async def get_knowledge_stats(
         file_repo = KnowledgeFileRepository()
 
         kb_rows = await kb_repo.get_all()
+        kb_rows = [kb for kb in kb_rows if (getattr(kb, "visibility", "public") or "public") != "agent_only"]
         total_databases = len(kb_rows)
 
         databases_by_type: dict[str, int] = {}

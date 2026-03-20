@@ -474,6 +474,12 @@ async def save_agent_config(
                 accessible_kb_names = {
                     db.get("name") for db in accessible_databases.get("databases", []) if db.get("name")
                 }
+
+                from src.services.kb_agent_binding_service import KBAgentBindingService
+
+                binding_service = KBAgentBindingService()
+                agent_only_kb_names = await binding_service.list_agent_only_kb_names_for_agent(agent_id)
+                accessible_kb_names.update(agent_only_kb_names)
             except Exception as db_error:
                 logger.warning(f"获取知识库列表失败: {db_error}")
                 # 如果获取失败，superadmin 可以访问所有，非 superadmin 无法访问任何

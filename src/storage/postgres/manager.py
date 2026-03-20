@@ -108,9 +108,11 @@ class PostgresManager(metaclass=SingletonMeta):
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS query_params JSONB",
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS additional_params JSONB",
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS share_config JSONB",
+            "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS visibility VARCHAR(20)",
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS mindmap JSONB",
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS sample_questions JSONB",
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ",
+            "UPDATE knowledge_bases SET visibility = 'public' WHERE visibility IS NULL",
             "ALTER TABLE IF EXISTS knowledge_files ADD COLUMN IF NOT EXISTS parent_id VARCHAR(64)",
             "ALTER TABLE IF EXISTS knowledge_files ADD COLUMN IF NOT EXISTS original_filename VARCHAR(512)",
             "ALTER TABLE IF EXISTS knowledge_files ADD COLUMN IF NOT EXISTS file_type VARCHAR(64)",
@@ -149,6 +151,7 @@ class PostgresManager(metaclass=SingletonMeta):
             "ALTER TABLE IF EXISTS evaluation_results ALTER COLUMN db_id TYPE VARCHAR(80)",
             "CREATE INDEX IF NOT EXISTS idx_kb_type ON knowledge_bases(kb_type)",
             "CREATE INDEX IF NOT EXISTS idx_kb_name ON knowledge_bases(name)",
+            "CREATE INDEX IF NOT EXISTS idx_kb_visibility ON knowledge_bases(visibility)",
             "CREATE INDEX IF NOT EXISTS idx_kf_db_id ON knowledge_files(db_id)",
             "CREATE INDEX IF NOT EXISTS idx_kf_parent ON knowledge_files(parent_id)",
             "CREATE INDEX IF NOT EXISTS idx_kf_status ON knowledge_files(status)",
@@ -158,6 +161,17 @@ class PostgresManager(metaclass=SingletonMeta):
             "CREATE INDEX IF NOT EXISTS idx_er_status ON evaluation_results(status)",
             "CREATE INDEX IF NOT EXISTS idx_er_started ON evaluation_results(started_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_erd_task ON evaluation_result_details(task_id)",
+            """
+            CREATE TABLE IF NOT EXISTS kb_agent_bindings (
+                id SERIAL PRIMARY KEY,
+                kb_id VARCHAR(100) NOT NULL,
+                agent_id VARCHAR(64) NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                CONSTRAINT uq_kb_agent_binding UNIQUE (kb_id, agent_id)
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_kb_agent_bindings_kb_id ON kb_agent_bindings(kb_id)",
+            "CREATE INDEX IF NOT EXISTS idx_kb_agent_bindings_agent_id ON kb_agent_bindings(agent_id)",
         ]
 
         async with self.async_engine.begin() as conn:

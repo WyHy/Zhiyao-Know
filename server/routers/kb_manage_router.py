@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from src.services.user_department_service import KBDepartmentService
+from src.services.kb_agent_binding_service import KBAgentBindingService
 from src.services.kb_access_control_service import KBAccessControlService
 from src.storage.postgres.models_business import User
 from server.utils.auth_middleware import get_admin_user, get_superadmin_user
@@ -37,6 +38,13 @@ class KBAccessAllow(BaseModel):
     """允许用户访问知识库"""
     
     user_ids: list[int]
+
+
+class KBAgentBind(BaseModel):
+    """绑定知识库到智能体"""
+
+    agent_ids: list[str]
+    replace: bool = False
 
 
 # =============================================================================
@@ -218,3 +226,45 @@ async def check_user_kb_access(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"检查失败: {str(e)}")
+
+
+# =============================================================================
+# === 知识库-智能体绑定路由 ===
+# =============================================================================
+
+
+@kb_manage.post("/{kb_id}/agent-bindings")
+async def bind_kb_agents(
+    kb_id: str,
+    data: KBAgentBind,
+    current_user: User = Depends(get_admin_user),
+):
+    """将知识库绑定到智能体"""
+    service = KBAgentBindingService()
+    count = await service.bind_agents(kb_id=kb_id, agent_ids=data.agent_ids, replace=data.replace)
+    agents = await service.list_agents_for_kb(kb_id)
+    return {"success": True, "count": count, "data": {"kb_id": kb_id, "agent_ids": agents}}
+
+
+@kb_manage.get("/{kb_id}/agent-bindings")
+async def list_kb_agents(
+    kb_id: str,
+    current_user: User = Depends(get_admin_user),
+):
+    """获取知识库绑定的智能体列表"""
+    service = KBAgentBindingService()
+    agents = await service.list_agents_for_kb(kb_id)
+    return {"success": True, "data": {"kb_id": kb_id, "agent_ids": agents}}
+
+
+@kb_manage.delete("/{kb_id}/agent-bindings/{agent_id}")
+async def unbind_kb_agent(
+    kb_id: str,
+    agent_id: str,
+    current_user: User = Depends(get_admin_user),
+):
+    """解除知识库与智能体的绑定"""
+    service = KBAgentBindingService()
+    await service.unbind_agent(kb_id=kb_id, agent_id=agent_id)
+    agents = await service.list_agents_for_kb(kb_id)
+    return {"success": True, "data": {"kb_id": kb_id, "agent_ids": agents}}

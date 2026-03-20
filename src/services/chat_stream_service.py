@@ -13,6 +13,7 @@ from src.agents import agent_manager
 from src.plugins.guard import content_guard
 from src.repositories.agent_config_repository import AgentConfigRepository
 from src.repositories.conversation_repository import ConversationRepository
+from src.services.kb_agent_binding_service import KBAgentBindingService
 from src.storage.postgres.manager import pg_manager
 from src.utils.logging_config import logger
 
@@ -332,24 +333,33 @@ async def stream_agent_chat(
             logger.error(f"Error loading attachments for thread_id={thread_id}: {e}")
             input_context["attachments"] = []
 
-        # 根据用户权限过滤知识库
+        # 根据用户权限过滤知识库，并自动追加该智能体绑定的 agent_only 知识库
         requested_knowledge_names = input_context["agent_config"].get("knowledges")
         logger.info(f"Requesting knowledges: {requested_knowledge_names}")
         if requested_knowledge_names and isinstance(requested_knowledge_names, list) and requested_knowledge_names:
-            user_info = {"role": "user", "department_id": department_id}
+            user_info = {"role": current_user.role, "user_id": current_user.id, "department_id": department_id}
             accessible_databases = await knowledge_base.get_databases_by_user(user_info)
             accessible_kb_names = {
                 db.get("name")
                 for db in accessible_databases.get("databases", [])
                 if isinstance(db, dict) and db.get("name")
             }
+            agent_only_kb_names = await KBAgentBindingService().list_agent_only_kb_names_for_agent(agent_id)
+            accessible_kb_names.update(agent_only_kb_names)
             logger.info(f"Accessible knowledges: {accessible_kb_names}")
 
             filtered_knowledge_names = [kb for kb in requested_knowledge_names if kb in accessible_kb_names]
             blocked_knowledge_names = [kb for kb in requested_knowledge_names if kb not in accessible_kb_names]
             if blocked_knowledge_names:
                 logger.warning(f"用户 {user_id} 无权访问知识库: {blocked_knowledge_names}, 已自动过滤")
+            for kb_name in agent_only_kb_names:
+                if kb_name not in filtered_knowledge_names:
+                    filtered_knowledge_names.append(kb_name)
             input_context["agent_config"]["knowledges"] = filtered_knowledge_names
+        else:
+            agent_only_kb_names = await KBAgentBindingService().list_agent_only_kb_names_for_agent(agent_id)
+            if agent_only_kb_names:
+                input_context["agent_config"]["knowledges"] = agent_only_kb_names
 
         full_msg = None
         accumulated_content = []
@@ -532,6 +542,26 @@ async def stream_agent_resume(
         "agent_config_id": agent_config_id,
         "agent_config": (config_item.config_json or {}).get("context", config_item.config_json or {}),
     }
+    try:
+        requested = input_context["agent_config"].get("knowledges")
+        if not isinstance(requested, list):
+            requested = []
+        user_info = {"role": current_user.role, "user_id": current_user.id, "department_id": department_id}
+        accessible_databases = await knowledge_base.get_databases_by_user(user_info)
+        accessible_kb_names = {
+            db.get("name")
+            for db in accessible_databases.get("databases", [])
+            if isinstance(db, dict) and db.get("name")
+        }
+        agent_only_kb_names = await KBAgentBindingService().list_agent_only_kb_names_for_agent(agent_id)
+        accessible_kb_names.update(agent_only_kb_names)
+        input_context["agent_config"]["knowledges"] = [kb for kb in requested if kb in accessible_kb_names]
+        for kb_name in agent_only_kb_names:
+            if kb_name not in input_context["agent_config"]["knowledges"]:
+                input_context["agent_config"]["knowledges"].append(kb_name)
+    except Exception as e:
+        logger.warning(f"Failed to apply bound knowledge filtering during resume: {e}")
+
     context = agent.context_schema()
     agent_config = input_context.get("agent_config")
     if isinstance(agent_config, dict):

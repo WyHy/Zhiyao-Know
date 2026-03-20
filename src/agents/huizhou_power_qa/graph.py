@@ -4,12 +4,14 @@ from langchain.agents.middleware import ModelRetryMiddleware
 from src.agents.common import BaseAgent, load_chat_model
 from src.agents.common.middlewares import RuntimeConfigMiddleware, inject_attachment_context
 from src.services.mcp_service import get_tools_from_all_servers
+from .context import HuizhouPowerQAContext
 
 
 class HuizhouPowerQAAgent(BaseAgent):
     name = "惠州电力整改问答助手"
     description = "基于惠州电力整改方案 QA 知识库进行问答的专用智能体。"
     capabilities = ["file_upload"]
+    context_schema = HuizhouPowerQAContext
 
     async def get_graph(self, **kwargs):
         context = self.context_schema()
@@ -27,4 +29,3 @@ class HuizhouPowerQAAgent(BaseAgent):
         )
 
         return graph
-
