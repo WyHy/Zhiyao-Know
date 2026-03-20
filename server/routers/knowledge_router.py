@@ -16,11 +16,23 @@ from src import config, knowledge_base
 from src.knowledge.indexing import SUPPORTED_FILE_EXTENSIONS, is_supported_file_extension, process_file_to_markdown
 from src.knowledge.utils import calculate_content_hash
 from src.models.embed import test_all_embedding_models_status, test_embedding_model_status
+from src.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from src.storage.postgres.models_business import User
 from src.storage.minio.client import StorageError, aupload_file_to_minio, get_minio_client
 from src.utils import logger
 
 knowledge = APIRouter(prefix="/knowledge", tags=["knowledge"])
+
+KB_VISIBILITY_PUBLIC = "public"
+KB_VISIBILITY_PRIVATE = "private"
+KB_VISIBILITY_AGENT_ONLY = "agent_only"
+KB_VISIBILITY_CHOICES = {KB_VISIBILITY_PUBLIC, KB_VISIBILITY_PRIVATE, KB_VISIBILITY_AGENT_ONLY}
+
+
+async def _deny_agent_only_kb_from_web(db_id: str) -> None:
+    kb_row = await KnowledgeBaseRepository().get_by_id(db_id)
+    if kb_row and (kb_row.visibility or KB_VISIBILITY_PUBLIC) == KB_VISIBILITY_AGENT_ONLY:
+        raise HTTPException(status_code=404, detail="Database not found")
 
 media_types = {
     ".pdf": "application/pdf",
@@ -95,6 +107,7 @@ async def create_database(
     additional_params: dict = Body({}),
     llm_info: dict = Body(None),
     share_config: dict = Body(None),
+    visibility: str = Body(KB_VISIBILITY_PUBLIC),
     current_user: User = Depends(get_required_user),
 ):
     """创建知识库
@@ -109,6 +122,9 @@ async def create_database(
         f"embed_model_name {embed_model_name}, share_config {share_config}"
     )
     try:
+        if visibility not in KB_VISIBILITY_CHOICES:
+            raise HTTPException(status_code=400, detail=f"visibility 仅支持: {', '.join(sorted(KB_VISIBILITY_CHOICES))}")
+
         # 先检查名称是否已存在
         if await knowledge_base.database_name_exists(database_name):
             raise HTTPException(
@@ -166,6 +182,7 @@ async def create_database(
             embed_info=embed_info_dict,
             llm_info=llm_info,
             share_config=share_config,
+            visibility=visibility,
             **additional_params,
         )
 
@@ -207,6 +224,8 @@ async def get_accessible_databases(current_user: User = Depends(get_required_use
 @knowledge.get("/databases/{db_id}")
 async def get_database_info(db_id: str, current_user: User = Depends(get_required_user)):
     """获取知识库详细信息"""
+    await _deny_agent_only_kb_from_web(db_id)
+
     database = await knowledge_base.get_database_info(db_id)
     if database is None:
         raise HTTPException(status_code=404, detail="Database not found")
@@ -221,14 +240,18 @@ async def update_database_info(
     llm_info: dict = Body(None),
     additional_params: dict = Body({}),
     share_config: dict = Body(None),
+    visibility: str | None = Body(None),
     current_user: User = Depends(get_required_user),
 ):
     """更新知识库信息"""
+    await _deny_agent_only_kb_from_web(db_id)
     logger.debug(
         f"[update_database_info] 接收到的参数: name={name}, llm_info={llm_info}, "
         f"additional_params={additional_params}, share_config={share_config}"
     )
     try:
+        if visibility is not None and visibility not in KB_VISIBILITY_CHOICES:
+            raise HTTPException(status_code=400, detail=f"visibility 仅支持: {', '.join(sorted(KB_VISIBILITY_CHOICES))}")
         database = await knowledge_base.update_database(
             db_id,
             name,
@@ -236,6 +259,7 @@ async def update_database_info(
             llm_info,
             additional_params=additional_params,
             share_config=share_config,
+            visibility=visibility,
         )
         return {"message": "更新成功", "database": database}
     except Exception as e:
@@ -246,6 +270,7 @@ async def update_database_info(
 @knowledge.delete("/databases/{db_id}")
 async def delete_database(db_id: str, current_user: User = Depends(get_required_user)):
     """删除知识库"""
+    await _deny_agent_only_kb_from_web(db_id)
     logger.debug(f"Delete database {db_id}")
     try:
         await knowledge_base.delete_database(db_id)
@@ -269,6 +294,7 @@ async def export_database(
     current_user: User = Depends(get_required_user),
 ):
     """导出知识库数据"""
+    await _deny_agent_only_kb_from_web(db_id)
     logger.debug(f"Exporting database {db_id} with format {format}")
     try:
         file_path = await knowledge_base.export_data(db_id, format=format, include_vectors=include_vectors)
@@ -297,6 +323,7 @@ async def add_documents(
     db_id: str, items: list[str] = Body(...), params: dict = Body(...), current_user: User = Depends(get_required_user)
 ):
     """添加文档到知识库（上传 -> 解析 -> 可选入库）"""
+    await _deny_agent_only_kb_from_web(db_id)
     logger.debug(f"Add documents for db_id {db_id}: {items} {params=}")
 
     content_type = params.get("content_type", "file")
@@ -479,6 +506,7 @@ async def add_documents(
 @knowledge.post("/databases/{db_id}/documents/parse")
 async def parse_documents(db_id: str, file_ids: list[str] = Body(...), current_user: User = Depends(get_required_user)):
     """手动触发文档解析"""
+    await _deny_agent_only_kb_from_web(db_id)
     logger.debug(f"Parse documents for db_id {db_id}: {file_ids}")
 
     async def run_parse(context: TaskContext):
@@ -532,6 +560,7 @@ async def index_documents(
     current_user: User = Depends(get_required_user),
 ):
     """手动触发文档入库（Indexing），支持更新参数"""
+    await _deny_agent_only_kb_from_web(db_id)
     logger.debug(f"Index documents for db_id {db_id}: {file_ids} {params=}")
 
     # extract operator_id safely before background task
@@ -604,6 +633,7 @@ async def index_documents(
 @knowledge.get("/databases/{db_id}/documents/{doc_id}")
 async def get_document_info(db_id: str, doc_id: str, current_user: User = Depends(get_required_user)):
     """获取文档详细信息（包含基本信息和内容信息）"""
+    await _deny_agent_only_kb_from_web(db_id)
     logger.debug(f"GET document {doc_id} info in {db_id}")
 
     try:
@@ -617,6 +647,7 @@ async def get_document_info(db_id: str, doc_id: str, current_user: User = Depend
 @knowledge.get("/databases/{db_id}/documents/{doc_id}/basic")
 async def get_document_basic_info(db_id: str, doc_id: str, current_user: User = Depends(get_required_user)):
     """获取文档基本信息（仅元数据）"""
+    await _deny_agent_only_kb_from_web(db_id)
     logger.debug(f"GET document {doc_id} basic info in {db_id}")
 
     try:
@@ -630,6 +661,7 @@ async def get_document_basic_info(db_id: str, doc_id: str, current_user: User = 
 @knowledge.get("/databases/{db_id}/documents/{doc_id}/content")
 async def get_document_content(db_id: str, doc_id: str, current_user: User = Depends(get_required_user)):
     """获取文档内容信息（chunks和lines）"""
+    await _deny_agent_only_kb_from_web(db_id)
     logger.debug(f"GET document {doc_id} content in {db_id}")
 
     try:
@@ -643,6 +675,7 @@ async def get_document_content(db_id: str, doc_id: str, current_user: User = Dep
 @knowledge.delete("/databases/{db_id}/documents/{doc_id}")
 async def delete_document(db_id: str, doc_id: str, current_user: User = Depends(get_required_user)):
     """删除文档或文件夹"""
+    await _deny_agent_only_kb_from_web(db_id)
     logger.debug(f"DELETE document {doc_id} info in {db_id}")
     try:
         file_meta_info = await knowledge_base.get_file_basic_info(db_id, doc_id)
@@ -674,6 +707,7 @@ async def delete_document(db_id: str, doc_id: str, current_user: User = Depends(
 @knowledge.get("/databases/{db_id}/documents/{doc_id}/download")
 async def download_document(db_id: str, doc_id: str, request: Request, current_user: User = Depends(get_required_user)):
     """下载原始文件 - 根据path类型选择本地或MinIO下载"""
+    await _deny_agent_only_kb_from_web(db_id)
     logger.debug(f"Download document {doc_id} from {db_id}")
 
     # 检查下载权限
@@ -822,8 +856,16 @@ async def query_knowledge_base(
     """查询知识库"""
     logger.debug(f"Query knowledge base {db_id}: {query}")
     try:
+        await _deny_agent_only_kb_from_web(db_id)
+
+        user_info = {"role": current_user.role, "user_id": current_user.id, "department_id": current_user.department_id}
+        if not await knowledge_base.check_accessible(user_info, db_id):
+            raise HTTPException(status_code=403, detail="无权访问该知识库")
+
         result = await knowledge_base.aquery(query, db_id=db_id, **meta)
         return {"result": result, "status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"知识库查询失败 {e}, {traceback.format_exc()}")
         return {"message": f"知识库查询失败: {e}", "status": "failed"}
@@ -836,8 +878,16 @@ async def query_test(
     """测试查询知识库"""
     logger.debug(f"Query test in {db_id}: {query}")
     try:
+        await _deny_agent_only_kb_from_web(db_id)
+
+        user_info = {"role": current_user.role, "user_id": current_user.id, "department_id": current_user.department_id}
+        if not await knowledge_base.check_accessible(user_info, db_id):
+            raise HTTPException(status_code=403, detail="无权访问该知识库")
+
         result = await knowledge_base.aquery(query, db_id=db_id, **meta)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"测试查询失败 {e}, {traceback.format_exc()}")
         return {"message": f"测试查询失败: {e}", "status": "failed"}
@@ -848,6 +898,7 @@ async def update_knowledge_base_query_params(
     db_id: str, params: dict = Body(...), current_user: User = Depends(get_required_user)
 ):
     """更新知识库查询参数配置"""
+    await _deny_agent_only_kb_from_web(db_id)
     try:
         # 获取知识库实例
         kb_instance = await knowledge_base._get_kb_for_database(db_id)
@@ -880,6 +931,7 @@ async def update_knowledge_base_query_params(
 @knowledge.get("/databases/{db_id}/query-params")
 async def get_knowledge_base_query_params(db_id: str, current_user: User = Depends(get_required_user)):
     """获取知识库类型特定的查询参数"""
+    await _deny_agent_only_kb_from_web(db_id)
     try:
         # 获取知识库实例
         kb_instance = await knowledge_base._get_kb_for_database(db_id)
@@ -957,6 +1009,7 @@ async def generate_sample_questions(
     Returns:
         生成的问题列表
     """
+    await _deny_agent_only_kb_from_web(db_id)
     try:
         from src.models import select_model
 
@@ -1074,6 +1127,7 @@ async def get_sample_questions(db_id: str, current_user: User = Depends(get_requ
     Returns:
         问题列表
     """
+    await _deny_agent_only_kb_from_web(db_id)
     try:
         from src.repositories.knowledge_base_repository import KnowledgeBaseRepository
 
@@ -1112,6 +1166,7 @@ async def create_folder(
     current_user: User = Depends(get_required_user),
 ):
     """创建文件夹"""
+    await _deny_agent_only_kb_from_web(db_id)
     try:
         return await knowledge_base.create_folder(db_id, folder_name, parent_id)
     except Exception as e:
@@ -1127,6 +1182,7 @@ async def move_document(
     current_user: User = Depends(get_required_user),
 ):
     """移动文件或文件夹"""
+    await _deny_agent_only_kb_from_web(db_id)
     logger.debug(f"Move document {doc_id} to {new_parent_id} in {db_id}")
     try:
         return await knowledge_base.move_file(db_id, doc_id, new_parent_id)

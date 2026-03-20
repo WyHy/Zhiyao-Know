@@ -202,10 +202,10 @@
       <div class="agent-modal-content">
         <div class="agents-grid">
           <div
-            v-for="agent in agents"
+            v-for="agent in marketingAgents"
             :key="agent.id"
             class="agent-card"
-            :class="{ selected: agent.id === selectedAgentId }"
+            :class="{ selected: agent.id === MARKETING_AGENT_ID }"
             @click="selectAgentFromModal(agent.id)"
           >
             <div class="agent-card-header">
@@ -342,12 +342,15 @@ const MARKETING_AGENT_CONFIG_ID = 9
 const SHOW_TOOL_CALLS_IN_MARKETING = false
 const marketingAgentIdRef = ref(MARKETING_AGENT_ID)
 
-// 从 agentStore 中获取响应式状态（仅用于弹窗展示，实际请求用 MARKETING_AGENT_ID）
+// 从 agentStore 中获取响应式状态（实际请求固定使用 MARKETING_AGENT_ID）
 const {
   agents,
-  selectedAgentId,
   defaultAgentId
 } = storeToRefs(agentStore)
+
+const marketingAgents = computed(() => {
+  return (agents.value || []).filter((agent) => agent.id === MARKETING_AGENT_ID)
+})
 
 // 智能体选择弹窗状态
 const agentModalOpen = computed({
@@ -636,18 +639,10 @@ const openAgentModal = () => {
 
 // 从弹窗中选择智能体
 const selectAgentFromModal = async (agentId) => {
-  try {
-    await agentStore.selectAgent(agentId)
-    chatUIStore.agentModalOpen = false
-    // 选择智能体后，重新加载对话列表
-    await fetchThreads(agentId)
-    // 清空当前对话
-    currentThreadId.value = null
-    conversations.value = []
-  } catch (error) {
-    console.error('选择智能体失败:', error)
-    message.error('选择智能体失败')
+  if (agentId !== MARKETING_AGENT_ID) {
+    message.warning('营销页仅绑定 HuizhouPowerQAAgent')
   }
+  chatUIStore.agentModalOpen = false
 }
 
 // 设置默认智能体

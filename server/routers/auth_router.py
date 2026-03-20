@@ -1,3 +1,4 @@
+import asyncio
 import re
 import uuid
 from src.utils import logger
@@ -12,6 +13,7 @@ from src.storage.postgres.manager import pg_manager
 from src.storage.postgres.models_business import User, Department
 from src.repositories.user_repository import UserRepository
 from src.repositories.department_repository import DepartmentRepository
+from src.services.first_run_seed_service import FirstRunSeedService
 from server.utils.auth_middleware import (
     get_admin_user,
     get_superadmin_user,
@@ -277,6 +279,23 @@ async def initialize_admin(admin_data: InitializeAdmin, db: AsyncSession = Depen
 
     # 记录操作
     await log_operation(db, new_admin.id, "系统初始化", "创建超级管理员账户")
+
+    # 首次初始化后后台导入惠州隐藏知识库并绑定智能体（不阻塞初始化返回）
+    async def _seed_hidden_kb_background():
+        try:
+            seed_result = await FirstRunSeedService.seed_hidden_huizhou_kb(
+                operator_id=new_admin.id,
+                department_id=default_department.id if default_department else None,
+            )
+            logger.info(
+                "First-run hidden KB seed result: "
+                f"kb_id={seed_result.kb_id}, agent={seed_result.agent_id}, imported={seed_result.imported}, "
+                f"dataset={seed_result.dataset_path}, message={seed_result.message}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to seed hidden Huizhou KB during initialization: {e}")
+
+    asyncio.create_task(_seed_hidden_kb_background())
 
     return {
         "access_token": access_token,

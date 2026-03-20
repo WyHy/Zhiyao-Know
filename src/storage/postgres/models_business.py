@@ -595,3 +595,23 @@ class KBAccessControl(Base):
         }
 
 
+class KBAgentBinding(Base):
+    """知识库-智能体绑定表"""
+
+    __tablename__ = "kb_agent_bindings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kb_id = Column(String(100), nullable=False, index=True)
+    agent_id = Column(String(64), nullable=False, index=True)
+    created_at = Column(DateTime, default=utc_now_naive)
+
+    __table_args__ = (UniqueConstraint("kb_id", "agent_id", name="uq_kb_agent_binding"),)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "kb_id": self.kb_id,
+            "agent_id": self.agent_id,
+            "created_at": format_utc_datetime(self.created_at),
+        }
+

@@ -6,6 +6,11 @@ from src.knowledge.factory import KnowledgeBaseFactory
 from src.utils import logger
 from src.utils.datetime_utils import utc_isoformat
 
+KB_VISIBILITY_PUBLIC = "public"
+KB_VISIBILITY_PRIVATE = "private"
+KB_VISIBILITY_AGENT_ONLY = "agent_only"
+KB_VISIBILITY_CHOICES = {KB_VISIBILITY_PUBLIC, KB_VISIBILITY_PRIVATE, KB_VISIBILITY_AGENT_ONLY}
+
 
 class KnowledgeBaseManager:
     """
@@ -180,6 +185,7 @@ class KnowledgeBaseManager:
                 # 补充 share_config 和 additional_params
                 db_info["share_config"] = row.share_config or {"is_shared": True, "accessible_departments": []}
                 db_info["additional_params"] = row.additional_params or {}
+                db_info["visibility"] = row.visibility or KB_VISIBILITY_PUBLIC
                 all_databases.append(db_info)
         return {"databases": all_databases}
 
@@ -200,12 +206,21 @@ class KnowledgeBaseManager:
         Returns:
             bool: 是否有权限
         """
-        # 超级管理员有权访问所有
-        if user.get("role") == "superadmin":
-            return True
-
         from src.repositories.knowledge_base_repository import KnowledgeBaseRepository
         from src.services.kb_access_control_service import KBAccessControlService
+
+        kb_repo = KnowledgeBaseRepository()
+        kb = await kb_repo.get_by_id(db_id)
+        if kb is None:
+            return False
+
+        # agent_only 对所有 Web 用户均不可直接访问（包括 superadmin）
+        if (kb.visibility or KB_VISIBILITY_PUBLIC) == KB_VISIBILITY_AGENT_ONLY:
+            return False
+
+        # 超级管理员有权访问其余知识库
+        if user.get("role") == "superadmin":
+            return True
 
         # 1. 检查黑名单（优先级最高）
         user_id = user.get("user_id")
@@ -218,12 +233,6 @@ class KnowledgeBaseManager:
             )
             if not can_access:
                 return False
-
-        # 2. 检查知识库的共享配置
-        kb_repo = KnowledgeBaseRepository()
-        kb = await kb_repo.get_by_id(db_id)
-        if kb is None:
-            return False
 
         share_config = kb.share_config or {}
         is_shared = share_config.get("is_shared", True)
@@ -258,10 +267,6 @@ class KnowledgeBaseManager:
             过滤后的知识库列表
         """
         all_databases = (await self.get_databases()).get("databases", [])
-
-        # 超级管理员可以看到所有知识库
-        if user.get("role") == "superadmin":
-            return {"databases": all_databases}
 
         filtered_databases = []
 
@@ -303,6 +308,7 @@ class KnowledgeBaseManager:
         kb_type: str = "lightrag",
         embed_info: dict | None = None,
         share_config: dict | None = None,
+        visibility: str = KB_VISIBILITY_PUBLIC,
         **kwargs,
     ) -> dict:
         """
@@ -322,6 +328,8 @@ class KnowledgeBaseManager:
         if not KnowledgeBaseFactory.is_type_supported(kb_type):
             available_types = list(KnowledgeBaseFactory.get_available_types().keys())
             raise ValueError(f"Unsupported knowledge base type: {kb_type}. Available types: {available_types}")
+        if visibility not in KB_VISIBILITY_CHOICES:
+            raise ValueError(f"Invalid visibility: {visibility}")
 
         # 检查名称是否已存在
         if await self.database_name_exists(database_name):
@@ -338,7 +346,7 @@ class KnowledgeBaseManager:
         from src.repositories.knowledge_base_repository import KnowledgeBaseRepository
 
         kb_repo = KnowledgeBaseRepository()
-        updated = await kb_repo.update(db_id, {"share_config": share_config})
+        updated = await kb_repo.update(db_id, {"share_config": share_config, "visibility": visibility})
         if updated is None:
             await kb_repo.create(
                 {
@@ -346,6 +354,7 @@ class KnowledgeBaseManager:
                     "name": database_name,
                     "description": description,
                     "kb_type": kb_type,
+                    "visibility": visibility,
                     "embed_info": embed_info,
                     "llm_info": db_info.get("llm_info"),
                     "additional_params": kwargs.copy(),
@@ -500,6 +509,7 @@ class KnowledgeBaseManager:
         if db_info:  # 确保 db_info 不为 None
             db_info["additional_params"] = kb.additional_params or {}
             db_info["share_config"] = kb.share_config or {"is_shared": True, "accessible_departments": []}
+            db_info["visibility"] = kb.visibility or KB_VISIBILITY_PUBLIC
             db_info["mindmap"] = kb.mindmap
             db_info["sample_questions"] = kb.sample_questions or []
             db_info["query_params"] = kb.query_params
@@ -646,6 +656,7 @@ class KnowledgeBaseManager:
         llm_info: dict = None,
         additional_params: dict | None = None,
         share_config: dict | None = None,
+        visibility: str | None = None,
     ) -> dict:
         """更新数据库"""
         from src.repositories.knowledge_base_repository import KnowledgeBaseRepository
@@ -664,6 +675,10 @@ class KnowledgeBaseManager:
             update_data["additional_params"] = additional_params
         if share_config is not None:
             update_data["share_config"] = share_config
+        if visibility is not None:
+            if visibility not in KB_VISIBILITY_CHOICES:
+                raise ValueError(f"Invalid visibility: {visibility}")
+            update_data["visibility"] = visibility
 
         # 保存到数据库
         kb_repo = KnowledgeBaseRepository()

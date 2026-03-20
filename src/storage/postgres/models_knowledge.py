@@ -32,6 +32,7 @@ class KnowledgeBase(Base):
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text)
     kb_type = Column(String(32), nullable=False, index=True)
+    visibility = Column(String(20), nullable=False, default="public", index=True)
     embed_info = Column(JSON_VALUE)
     llm_info = Column(JSON_VALUE)
     query_params = Column(JSON_VALUE)

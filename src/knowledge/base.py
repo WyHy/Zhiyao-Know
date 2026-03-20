@@ -979,6 +979,7 @@ class KnowledgeBase(ABC):
                 "name": kb.name,
                 "description": kb.description,
                 "kb_type": kb.kb_type,
+                "visibility": kb.visibility or "public",
                 "embed_info": kb.embed_info,
                 "llm_info": kb.llm_info,
                 "query_params": kb.query_params,
