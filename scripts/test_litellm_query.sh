@@ -7,5 +7,6 @@ curl -X POST "http://127.0.0.1:8010/queue/chat/completions" \
   -d '{
     "model": "Qwen3.5-35B-A3B-FP8",
     "messages": [{"role": "user", "content": "你好，做个自我介绍"}],
-    "stream": false
+    "stream": false,
+    "priority": 0
   }'
