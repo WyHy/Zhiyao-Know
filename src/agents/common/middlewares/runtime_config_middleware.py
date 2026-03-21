@@ -107,14 +107,14 @@ class RuntimeConfigMiddleware(AgentMiddleware):
         logger.debug(f"RuntimeConfigMiddleware: model={model}, "
                      f"tools={[t.name for t in enabled_tools]}. ")
 
+        # vLLM/HF chat template requires every system message to be at the beginning.
+        # Partition messages globally so no system message remains in the middle/tail.
         existing_systems: list[Any] = []
         remaining: list[Any] = []
-        in_prefix = True
         for msg in request.messages:
-            if in_prefix and _is_system_message(msg):
+            if _is_system_message(msg):
                 existing_systems.append(msg)
             else:
-                in_prefix = False
                 remaining.append(msg)
 
         existing_contents = [_get_message_content(m) for m in existing_systems]
