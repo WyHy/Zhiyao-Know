@@ -126,11 +126,14 @@ class BaseReranker(ABC):
 
 class OpenAIReranker(BaseReranker):
     def _build_payload(self, query: str, documents: list[str], max_length: int) -> dict[str, Any]:
+        # LiteLLM /v1/rerank expects OpenAI-style fields:
+        # model, query, documents, top_n.
+        # Use top_n=len(documents) to preserve current behavior.
         return {
             "model": self.model,
             "query": query,
             "documents": documents,
-            "max_chunks_per_doc": max_length,
+            "top_n": len(documents),
         }
 
     def _extract_results(self, result: dict[str, Any]) -> list[dict[str, Any]]:

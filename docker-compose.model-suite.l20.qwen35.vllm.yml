@@ -66,10 +66,13 @@ services:
       - --port
       - "8001"
       - --max-model-len
-      - "4096"
+      - "1024"
+      - --enforce-eager
       - --trust-remote-code
     environment:
       - CUDA_VISIBLE_DEVICES=
+      - VLLM_CPU_OMP_THREADS_BIND=nobind
+      - VLLM_CPU_KVCACHE_SPACE=1
     volumes:
       - ${MODEL_DIR:-./models}:/models
       - ./docker/volumes/vllm/hf-cache:/root/.cache/huggingface
@@ -90,18 +93,21 @@ services:
     container_name: vllm-qwen3-rerank-cpu
     command:
       - --model
-      - /models/Qwen/Qwen3-Reranker-0.6B
+      - /models/BAAI/bge-reranker-v2-m3
       - --served-model-name
-      - qwen3-rerank
+      - bge-reranker-v2-m3
       - --host
       - 0.0.0.0
       - --port
       - "8002"
       - --max-model-len
-      - "4096"
+      - "1024"
+      - --enforce-eager
       - --trust-remote-code
     environment:
       - CUDA_VISIBLE_DEVICES=
+      - VLLM_CPU_OMP_THREADS_BIND=nobind
+      - VLLM_CPU_KVCACHE_SPACE=1
     volumes:
       - ${MODEL_DIR:-./models}:/models
       - ./docker/volumes/vllm/hf-cache:/root/.cache/huggingface
