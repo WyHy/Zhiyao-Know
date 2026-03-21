@@ -38,11 +38,13 @@ from pathlib import Path
 import httpx
 
 # 配置
-API_BASE_URL = "http://localhost:5050"
+API_BASE_URL = os.getenv("YUXI_API_BASE_URL", "http://127.0.0.1:5050")
 USERNAME = os.getenv("YUXI_TEST_USERNAME") or os.getenv("YUXI_SUPER_ADMIN_NAME") or "admin"
-PASSWORD = os.getenv("YUXI_TEST_PASSWORD") or os.getenv("YUXI_SUPER_ADMIN_PASSWORD") or "1234hbnj"
+PASSWORD = os.getenv("YUXI_TEST_PASSWORD") or os.getenv("YUXI_SUPER_ADMIN_PASSWORD") or "Admin@123456"
 PRESET_TOKEN = os.getenv("YUXI_TEST_TOKEN") or os.getenv("YUXI_ACCESS_TOKEN")
-SOURCE_DIR = "/Users/wangying/Documents/外包/9-罗总-惠州电力局人工智能/4.文件汇总/文件汇总"
+HTTP_TIMEOUT = float(os.getenv("YUXI_HTTP_TIMEOUT", "30"))
+LOGIN_RETRIES = int(os.getenv("YUXI_LOGIN_RETRIES", "3"))
+SOURCE_DIR = "/mnt/usb2/4.文件汇总"
 
 # 支持的文件类型
 SUPPORTED_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt", ".xls", ".xlsx", ".ppt", ".pptx"}
@@ -146,28 +148,44 @@ class HuizhouImporter:
                 return True
             print("  ⚠️  预设 token 无效，尝试账号密码登录...")
         
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(
-                f"{API_BASE_URL}/api/auth/token",
-                data={"username": USERNAME, "password": PASSWORD}
-            )
-            
-            if response.status_code != 200:
-                print(f"  ⚠️  账号密码登录失败: {response.text}")
-                print("  尝试从本地 api 容器自动签发测试 token...")
-                issued_token = self._issue_token_from_api_container()
-                if issued_token:
-                    self.token = issued_token
-                    if await self._validate_token():
-                        print("  ✅ 自动签发 token 登录成功")
-                        return True
-                print("  ❌ 自动获取 token 失败，请检查账号密码或容器环境")
-                return False
-            
+        response = None
+        last_error = None
+        for attempt in range(1, LOGIN_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+                    response = await client.post(
+                        f"{API_BASE_URL}/api/auth/token",
+                        data={"username": USERNAME, "password": PASSWORD}
+                    )
+                break
+            except httpx.TimeoutException as exc:
+                last_error = exc
+                print(f"  ⚠️  登录超时 (第 {attempt}/{LOGIN_RETRIES} 次): {exc}")
+            except Exception as exc:
+                last_error = exc
+                print(f"  ⚠️  登录请求异常 (第 {attempt}/{LOGIN_RETRIES} 次): {exc}")
+            if attempt < LOGIN_RETRIES:
+                await asyncio.sleep(1.5)
+
+        if response is not None and response.status_code == 200:
             data = response.json()
             self.token = data["access_token"]
             print(f"  ✅ 登录成功 (角色: {data.get('role', 'unknown')})")
             return True
+
+        if response is not None:
+            print(f"  ⚠️  账号密码登录失败: {response.text}")
+        elif last_error is not None:
+            print(f"  ⚠️  账号密码登录最终失败: {last_error}")
+        print("  尝试从本地 api 容器自动签发测试 token...")
+        issued_token = self._issue_token_from_api_container()
+        if issued_token:
+            self.token = issued_token
+            if await self._validate_token():
+                print("  ✅ 自动签发 token 登录成功")
+                return True
+        print("  ❌ 自动获取 token 失败，请检查账号密码或容器环境")
+        return False
 
     async def _validate_token(self) -> bool:
         """校验 token 是否可用"""
