@@ -36,6 +36,13 @@ def _safe_preview(text: str | None, limit: int = 300) -> str:
     return text[:limit] + "...<truncated>"
 
 
+def _safe_repr(obj: Any, limit: int = 1200) -> str:
+    try:
+        return _safe_preview(repr(obj), limit=limit)
+    except Exception:
+        return f"<unreprable:{obj.__class__.__name__}>"
+
+
 def _message_snapshot(msg: Any) -> dict[str, Any]:
     if isinstance(msg, dict):
         role = msg.get("role") or msg.get("type")
@@ -44,6 +51,29 @@ def _message_snapshot(msg: Any) -> dict[str, Any]:
     role = getattr(msg, "type", None) or getattr(msg, "role", None) or msg.__class__.__name__
     content = _safe_preview(_get_message_content(msg))
     return {"role": role, "content_preview": content}
+
+
+def _extract_llm_error_snapshot(e: Exception) -> dict[str, Any]:
+    response = getattr(e, "response", None)
+    response_text = None
+    if response is not None:
+        text_attr = getattr(response, "text", None)
+        if isinstance(text_attr, str):
+            response_text = text_attr
+        elif callable(text_attr):
+            try:
+                response_text = text_attr()
+            except Exception:
+                response_text = None
+
+    return {
+        "error_type": e.__class__.__name__,
+        "error_message": str(e),
+        "status_code": getattr(e, "status_code", None),
+        "error_body": _safe_repr(getattr(e, "body", None)),
+        "error_response_text": _safe_preview(response_text, limit=2000) if response_text else None,
+        "error_response_repr": _safe_repr(response, limit=2000) if response is not None else None,
+    }
 
 
 class RuntimeConfigMiddleware(AgentMiddleware):
@@ -129,11 +159,18 @@ class RuntimeConfigMiddleware(AgentMiddleware):
         logger.warning(f"RuntimeConfigMiddleware model call request: {debug_snapshot}")
 
         try:
-            return await handler(request)
+            response = await handler(request)
+            logger.warning(
+                "RuntimeConfigMiddleware model call response: "
+                f"{{'response_type': '{type(response).__name__}', 'response_preview': '{_safe_repr(response)}'}}"
+            )
+            return response
         except Exception as e:
+            error_snapshot = _extract_llm_error_snapshot(e)
             logger.error(
                 f"RuntimeConfigMiddleware model call failed: {type(e).__name__}: {e}\n"
-                f"Request snapshot: {debug_snapshot}"
+                f"Request snapshot: {debug_snapshot}\n"
+                f"LLM error snapshot: {error_snapshot}"
             )
             raise
 
