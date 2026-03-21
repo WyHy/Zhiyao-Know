@@ -124,6 +124,10 @@ class RuntimeConfigMiddleware(AgentMiddleware):
             "messages_preview": [_message_snapshot(m) for m in messages[:6]],
         }
 
+        # Always log request snapshot before calling model so 4xx cases are observable
+        # even if lower layers handle/retry without bubbling an exception.
+        logger.warning(f"RuntimeConfigMiddleware model call request: {debug_snapshot}")
+
         try:
             return await handler(request)
         except Exception as e:
