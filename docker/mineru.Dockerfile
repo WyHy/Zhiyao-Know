@@ -12,7 +12,9 @@ FROM docker.m.daocloud.io/vllm/vllm-openai:v0.10.1.1
 # FROM vllm/vllm-openai:v0.10.2
 
 # Install libgl for opencv support & Noto fonts for Chinese characters
-RUN apt-get update && \
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list && \
+    sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list && \
+    apt-get update && \
     apt-get install -y \
         fonts-noto-core \
         fonts-noto-cjk \

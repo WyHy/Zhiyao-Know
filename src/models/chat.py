@@ -24,11 +24,12 @@ def split_model_spec(model_spec, sep="/"):
 
 
 class OpenAIBase:
-    def __init__(self, api_key, base_url, model_name, **kwargs):
+    def __init__(self, api_key, base_url, model_name, model_identifier=None, **kwargs):
         self.api_key = api_key
         self.base_url = base_url
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
+        self.model_identifier = model_identifier or model_name
         self.info = kwargs
 
     @retry(
@@ -48,7 +49,8 @@ class OpenAIBase:
             if stream:
                 response = self._stream_response(messages)
             else:
-                response = await self._get_response(messages)
+                raw_response = await self._get_response(messages)
+                response = raw_response.choices[0].message
 
         except Exception as e:
             err = (
@@ -76,7 +78,7 @@ class OpenAIBase:
             messages=messages,
             stream=False,
         )
-        return response.choices[0].message
+        return response
 
     async def get_models(self):
         try:
@@ -134,6 +136,7 @@ def select_model(model_provider=None, model_name=None, model_spec=None):
             api_key=os.environ.get(model_info.env, model_info.env),
             base_url=model_info.base_url,
             model_name=model_name,
+            model_identifier=f"{model_provider}/{model_name}",
         )
         return model
     except Exception as e:

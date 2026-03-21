@@ -30,6 +30,40 @@ cp .env.template .env.prod
 - `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`: 修改默认密钥
 - `SILICONFLOW_API_KEY` 等模型密钥
 
+如果你使用本地 vLLM 模型套件（聊天 / Embedding / Rerank），也可以在 `docker-compose.prod.yml` 的 `api.environment` 中通过以下变量覆盖端点：
+
+- `VLLM_CHAT_BASE_URL`（默认：`http://host.docker.internal:8000/v1`）
+- `VLLM_CHAT_MODEL`（默认：`Qwen2.5-72B-Instruct-AWQ`）
+- `VLLM_EMBED_BASE_URL`（默认：`http://host.docker.internal:8001/v1/embeddings`）
+- `VLLM_EMBED_MODEL`（默认：`Qwen3-Embedding-0.6B`）
+- `VLLM_RERANK_BASE_URL`（默认：`http://host.docker.internal:8002/v1/rerank`）
+- `VLLM_RERANK_MODEL`（默认：`qwen3-rerank`）
+
+### 1.1 中国大陆镜像源建议
+
+模型下载建议优先使用 **ModelScope（方案一）**；Docker 镜像建议配置国内镜像加速：
+
+```bash
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json >/dev/null <<'EOF'
+{
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://dockerproxy.cn"
+  ]
+}
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+在 qwen25/qwen35 的 compose 中，还可通过环境变量覆盖镜像来源：
+
+- `VLLM_OPENAI_IMAGE`
+- `VLLM_OPENAI_CPU_IMAGE`
+- `PYTHON_BASE_IMAGE`（LiteLLM 构建基础镜像）
+- `PIP_INDEX_URL` / `PIP_TRUSTED_HOST`（LiteLLM 构建时 Python 包源）
+
 ### 2. 启动服务
 
 使用 `docker-compose.prod.yml` 文件启动生产环境：
@@ -90,3 +124,44 @@ bash scripts/offline_bundle.sh import \
 详细步骤和交付清单见：
 
 - `docs/离线交付部署说明.md`
+
+## Ubuntu 22.04 + 双 L20 + vLLM 专用部署
+
+如果是从 Ubuntu 22.04 LTS 裸机开始，并需要按如下方式部署：
+
+- Qwen2.5-72B-Instruct-AWQ（vLLM，GPU 双卡）
+- 或 Qwen3.5-35B-A3B-FP8（vLLM，GPU 双卡）
+- Qwen3-Embedding-0.6B（vLLM，CPU）
+- Qwen3-Reranker-0.6B（vLLM，CPU）
+- PaddleOCR（CPU，仅整套 compose）
+
+请参考专用 Step by Step 文档：
+
+- `docs/ubuntu22.04-l20-vllm-step-by-step.md`
+
+对应编排文件（最新）：
+
+- `docker-compose.l20.qwen25.vllm.yml`（整套，含 OCR）
+- `docker-compose.model-suite.l20.qwen25.vllm.yml`（模型套件，不含 OCR）
+- `docker-compose.l20.qwen35.vllm.yml`（整套，含 OCR）
+- `docker-compose.model-suite.l20.qwen35.vllm.yml`（模型套件，不含 OCR）
+
+说明：以上四个编排均包含 `litellm-gateway`（LiteLLM，端口 `8010`），用于在业务与 vLLM 之间做 Token 感知限流（RPM/TPM）。
+并发与限流默认值已按双 L20 场景预设（Qwen2.5 更保守，Qwen3.5 更高吞吐）。
+
+另外，系统已接入 Prometheus 用于统一采集可观测指标：
+
+- 访问地址：`http://<host>:9090`
+- API 指标端点：`http://<host>:5050/metrics`
+- Crawler 指标端点：`http://<host>:18060/metrics`
+- LiteLLM 指标端点（相关编排启用时）：`http://<host>:8010/metrics`
+- vLLM 指标端点（相关编排启用时）：`http://<host>:8000/metrics`、`http://<host>:8001/metrics`、`http://<host>:8002/metrics`
+- 基础设施指标（Exporter/原生端点）：Redis、Postgres、Neo4j、Milvus、etcd、MinIO
+
+为控制 Prometheus 内存占用，默认已配置：
+
+- 抓取周期 `30s`
+- 保留时长 `24h`
+- 存储上限 `512MB`
+- 开启 WAL 压缩与查询样本/并发限制
+- 默认丢弃 histogram bucket 时序（保留 count/sum）

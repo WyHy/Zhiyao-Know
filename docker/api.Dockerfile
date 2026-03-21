@@ -22,9 +22,9 @@ ARG INSTALL_LIBREOFFICE=true
 RUN set -ex \
     # (A) 设置时区
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
-    # (B) 替换清华源 (针对 Debian Bookworm 的新版格式)
-    && sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
-    && sed -i 's|security.debian.org/debian-security|mirrors.tuna.tsinghua.edu.cn/debian-security|g' /etc/apt/sources.list.d/debian.sources \
+    # (B) 替换阿里源 (针对 Debian Bookworm 的新版格式)
+    && sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's|security.debian.org/debian-security|mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources \
     # (C) 安装必要的系统库
     && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update \
     && apt-get install -y --no-install-recommends --fix-missing \
@@ -49,7 +49,7 @@ COPY ../.python-version /app/.python-version
 COPY ../uv.lock /app/uv.lock
 COPY ../.wheels /tmp/wheels
 
-# uv.lock 历史上由清华源生成，这里统一替换为阿里源，避免构建时 TLS EOF
+# 统一使用阿里源
 RUN sed -i 's|https://pypi.tuna.tsinghua.edu.cn|https://mirrors.aliyun.com/pypi|g' /app/uv.lock
 
 # 方法一：优先使用仓库内预下载的 CPU wheel，避免构建时反复拉取 torch 大包
@@ -66,10 +66,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --index-url https://mirrors.aliyun.com/pypi/simple \
     --extra-index-url https://download.pytorch.org/whl/cpu
 
+RUN python -m pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple tiktoken
+
 RUN rm -rf /tmp/wheels
 
 # 激活虚拟环境并添加到PATH
 ENV PATH="/app/.venv/bin:$PATH"
+RUN echo 'export PATH="/app/.venv/bin:$PATH"' >> /root/.bashrc
 
 # 复制代码到容器中
 COPY ../src /app/src
