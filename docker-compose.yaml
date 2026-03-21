@@ -52,6 +52,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      graph:
+        condition: service_healthy
       milvus:
         condition: service_healthy
       minio:

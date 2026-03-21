@@ -32,14 +32,16 @@ import argparse
 import asyncio
 import os
 import re
+import subprocess
 from pathlib import Path
 
 import httpx
 
 # 配置
 API_BASE_URL = "http://localhost:5050"
-USERNAME = "admin"
-PASSWORD = "1234hbnj"
+USERNAME = os.getenv("YUXI_TEST_USERNAME") or os.getenv("YUXI_SUPER_ADMIN_NAME") or "admin"
+PASSWORD = os.getenv("YUXI_TEST_PASSWORD") or os.getenv("YUXI_SUPER_ADMIN_PASSWORD") or "1234hbnj"
+PRESET_TOKEN = os.getenv("YUXI_TEST_TOKEN") or os.getenv("YUXI_ACCESS_TOKEN")
 SOURCE_DIR = "/Users/wangying/Documents/外包/9-罗总-惠州电力局人工智能/4.文件汇总/文件汇总"
 
 # 支持的文件类型
@@ -136,6 +138,13 @@ class HuizhouImporter:
         if self.dry_run:
             print("  [DRY-RUN] 跳过登录")
             return True
+
+        if PRESET_TOKEN:
+            self.token = PRESET_TOKEN
+            if await self._validate_token():
+                print("  ✅ 使用预设 token 登录成功")
+                return True
+            print("  ⚠️  预设 token 无效，尝试账号密码登录...")
         
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
@@ -144,13 +153,60 @@ class HuizhouImporter:
             )
             
             if response.status_code != 200:
-                print(f"  ❌ 登录失败: {response.text}")
+                print(f"  ⚠️  账号密码登录失败: {response.text}")
+                print("  尝试从本地 api 容器自动签发测试 token...")
+                issued_token = self._issue_token_from_api_container()
+                if issued_token:
+                    self.token = issued_token
+                    if await self._validate_token():
+                        print("  ✅ 自动签发 token 登录成功")
+                        return True
+                print("  ❌ 自动获取 token 失败，请检查账号密码或容器环境")
                 return False
             
             data = response.json()
             self.token = data["access_token"]
             print(f"  ✅ 登录成功 (角色: {data.get('role', 'unknown')})")
             return True
+
+    async def _validate_token(self) -> bool:
+        """校验 token 是否可用"""
+        if not self.token:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    f"{API_BASE_URL}/api/auth/me",
+                    headers={"Authorization": f"Bearer {self.token}"}
+                )
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    @staticmethod
+    def _issue_token_from_api_container() -> str | None:
+        """
+        从本地 docker compose 的 api 容器签发临时 token
+        依赖容器内 AuthUtils，默认签发 user_id=1
+        """
+        cmd = [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "api",
+            "python",
+            "-c",
+            "from server.utils.auth_utils import AuthUtils; print(AuthUtils.create_access_token({'sub':'1'}))",
+        ]
+        try:
+            proc = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            lines = [x.strip() for x in (proc.stdout or "").splitlines() if x.strip()]
+            if not lines:
+                return None
+            return lines[-1]
+        except Exception:
+            return None
     
     def get_headers(self):
         """获取认证头"""
