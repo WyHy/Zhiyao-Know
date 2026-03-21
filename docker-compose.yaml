@@ -42,6 +42,15 @@ services:
       - no_proxy=localhost,127.0.0.1,milvus,graph,milvus-minio,milvus-etcd-dev,etcd,minio,mineru,paddlex,api.siliconflow.cn
     # endregion api_envs
     command: uvicorn server.main:app --host 0.0.0.0 --port 5050 --reload
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:5050/api/system/health || exit 1" ]
@@ -81,6 +90,15 @@ services:
       - CRAWLER_USE_CELERY=${CRAWLER_USE_CELERY:-true}
       - CRAWLER_REDIS_URL=${CRAWLER_REDIS_URL:-redis://app-redis:6379/0}
     command: uvicorn main:app --host 0.0.0.0 --port 5060 --reload
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
     depends_on:
       postgres:
@@ -110,6 +128,15 @@ services:
       - CRAWLER_USE_CELERY=${CRAWLER_USE_CELERY:-true}
       - CRAWLER_REDIS_URL=${CRAWLER_REDIS_URL:-redis://app-redis:6379/0}
     command: celery -A core.celery_app.celery_app worker --loglevel=info --concurrency=2
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
     depends_on:
       app-redis:
@@ -120,6 +147,15 @@ services:
     container_name: app-redis
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
   redis-exporter:
@@ -133,6 +169,15 @@ services:
         condition: service_started
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
   prometheus:
@@ -153,6 +198,15 @@ services:
       - "9090:9090"
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
   web:
@@ -171,6 +225,15 @@ services:
     networks:
       - app-network
     command: nginx -g "daemon off;"
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
   # region neo4j
@@ -196,6 +259,15 @@ services:
       - ENTITY_EMBEDDING=true
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
   # endregion neo4j
 
@@ -218,6 +290,15 @@ services:
       start_period: 30s
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
   minio:
@@ -242,6 +323,15 @@ services:
     #   - "9001:9001"
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
   milvus:
@@ -271,6 +361,15 @@ services:
       - "minio"
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
   postgres:
@@ -292,6 +391,15 @@ services:
       retries: 30
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
   postgres-exporter:
@@ -304,6 +412,15 @@ services:
         condition: service_healthy
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
   # lastest version: wget https://gcore.jsdelivr.net/gh/opendatalab/MinerU@master/docker/compose.yaml
@@ -327,7 +444,12 @@ services:
       # --data-parallel-size 2  # If using multiple GPUs, increase throughput using vllm's multi-GPU parallel mode
       # --gpu-memory-utilization 0.5  # If running on a single GPU and encountering VRAM shortage, reduce the KV cache size by this parameter, if VRAM issues persist, try lowering it further to `0.4` or below.
     ulimits:
-      memlock: -1
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
       stack: 67108864
     ipc: host
     healthcheck:
@@ -341,6 +463,7 @@ services:
               capabilities: [ gpu ]
     networks:
       - app-network
+    shm_size: 8g
     restart: unless-stopped
 
   mineru-api:
@@ -360,9 +483,15 @@ services:
     entrypoint: mineru-api
     command: --host 0.0.0.0 --port 30001
     ulimits:
-      memlock: -1
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
       stack: 67108864
     ipc: host
+    shm_size: 8g
     restart: unless-stopped
     networks:
       - app-network
@@ -395,6 +524,15 @@ services:
               capabilities: [ gpu ]
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
 networks:

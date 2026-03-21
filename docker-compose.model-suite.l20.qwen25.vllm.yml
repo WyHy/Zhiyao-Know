@@ -33,7 +33,12 @@ services:
       - "8000:8000"
     ipc: host
     ulimits:
-      memlock: -1
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
       stack: 67108864
     deploy:
       resources:
@@ -50,6 +55,7 @@ services:
       start_period: 300s
     networks:
       - app-network
+    shm_size: 8g
     restart: unless-stopped
 
   vllm-qwen3-embedding-cpu:
@@ -82,6 +88,15 @@ services:
       start_period: 120s
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
   vllm-bge-reranker-v2-m3-cpu:
@@ -114,6 +129,15 @@ services:
       start_period: 120s
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
   litellm-gateway:
@@ -147,6 +171,15 @@ services:
       - vllm-bge-reranker-v2-m3-cpu
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
   prometheus:
@@ -167,6 +200,15 @@ services:
       - "9090:9090"
     networks:
       - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
     restart: unless-stopped
 
 networks:
