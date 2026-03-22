@@ -1,26 +1,10 @@
-# HuizhouPowerQAAgent 并发压测报告
-
-## 运行概览
-
-| 指标 | 值 |
-|---|---|
-| started_at | 2026-03-21T22:19:08.832315+00:00 |
-| finished_at | 2026-03-21T22:21:20.359739+00:00 |
-| elapsed_sec | 131.527 |
-| throughput_rps | 1.863 |
-| output_tokens_total | 35994 |
-| throughput_tokens_per_sec | 273.662 |
-| total_requests | 245 |
-| success_requests | 148 |
-| error_requests | 97 |
-| success_rate | 60.408% |
-| peak_task_concurrency | 245 |
+# 并发压测报告
 
 ## 请求赛道图
 
 ![请求赛道图](request_race_track.svg)
 
-说明：图中的横轴时间来自每个请求的 `request_started_at` 和 `request_ended_at`。
+说明：图中的横轴时间来自每个请求的 `request_started_at` 和 `request_ended_at`，纵轴任务按 `request_started_at` 升序排列。
 
 ## 延迟统计（仅成功请求）
 
@@ -35,6 +19,10 @@
 ## 并发 vs 延迟曲线（阶梯压测）
 
 ![并发-延迟曲线](concurrency_latency_curve.svg)
+
+## 并发 vs TTFT 曲线（阶梯压测）
+
+![并发-TTFT曲线](concurrency_ttft_curve.svg)
 
 - 最优 p95 点: concurrency=1, p95=6093.285ms
 
