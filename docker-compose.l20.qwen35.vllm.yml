@@ -10,6 +10,9 @@ services:
       - VLLM_EMBED_MODEL=${VLLM_EMBED_MODEL:-Qwen3-Embedding-0.6B}
       - VLLM_RERANK_BASE_URL=${VLLM_RERANK_BASE_URL:-http://litellm-gateway:8010/v1/rerank}
       - VLLM_RERANK_MODEL=${VLLM_RERANK_MODEL:-bge-reranker-v2-m3}
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
+      - PYTHONUTF8=1
     command:
       - /bin/sh
       - -c
@@ -320,10 +323,13 @@ services:
       - --port
       - "8001"
       - --max-model-len
-      - "4096"
+      - "1024"
+      - --enforce-eager
       - --trust-remote-code
     environment:
       - CUDA_VISIBLE_DEVICES=
+      - VLLM_CPU_OMP_THREADS_BIND=nobind
+      - VLLM_CPU_KVCACHE_SPACE=1
     volumes:
       - ${MODEL_DIR:-./models}:/models
       - ./docker/volumes/vllm/hf-cache:/root/.cache/huggingface
@@ -361,10 +367,13 @@ services:
       - --port
       - "8002"
       - --max-model-len
-      - "4096"
+      - "1024"
+      - --enforce-eager
       - --trust-remote-code
     environment:
       - CUDA_VISIBLE_DEVICES=
+      - VLLM_CPU_OMP_THREADS_BIND=nobind
+      - VLLM_CPU_KVCACHE_SPACE=1
     volumes:
       - ${MODEL_DIR:-./models}:/models
       - ./docker/volumes/vllm/hf-cache:/root/.cache/huggingface

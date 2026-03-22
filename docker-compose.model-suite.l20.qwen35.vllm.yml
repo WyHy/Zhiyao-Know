@@ -72,10 +72,13 @@ services:
       - --port
       - "8001"
       - --max-model-len
-      - "4096"
+      - "1024"
+      - --enforce-eager
       - --trust-remote-code
     environment:
       - CUDA_VISIBLE_DEVICES=
+      - VLLM_CPU_OMP_THREADS_BIND=nobind
+      - VLLM_CPU_KVCACHE_SPACE=1
     volumes:
       - ${MODEL_DIR:-./models}:/models
       - ./docker/volumes/vllm/hf-cache:/root/.cache/huggingface
@@ -113,10 +116,13 @@ services:
       - --port
       - "8002"
       - --max-model-len
-      - "4096"
+      - "1024"
+      - --enforce-eager
       - --trust-remote-code
     environment:
       - CUDA_VISIBLE_DEVICES=
+      - VLLM_CPU_OMP_THREADS_BIND=nobind
+      - VLLM_CPU_KVCACHE_SPACE=1
     volumes:
       - ${MODEL_DIR:-./models}:/models
       - ./docker/volumes/vllm/hf-cache:/root/.cache/huggingface
