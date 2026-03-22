@@ -20,7 +20,7 @@
 
 ![请求赛道图](request_race_track.svg)
 
-说明：图中的横轴时间来自每个请求的 `request_started_at` 和 `request_ended_at`。
+说明：图中的横轴时间来自每个请求的 `request_started_at` 和 `request_ended_at`，纵轴任务按 `request_started_at` 升序排列。
 
 ## 延迟统计（仅成功请求）
 
@@ -35,6 +35,10 @@
 ## 并发 vs 延迟曲线（阶梯压测）
 
 ![并发-延迟曲线](concurrency_latency_curve.svg)
+
+## 并发 vs TTFT 曲线（阶梯压测）
+
+![并发-TTFT曲线](concurrency_ttft_curve.svg)
 
 - 最优 p95 点: concurrency=1, p95=6093.285ms
 
