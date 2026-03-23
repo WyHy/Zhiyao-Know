@@ -269,9 +269,9 @@ services:
       - --dtype
       - auto
       - --gpu-memory-utilization
-      - "0.96"
+      - "0.94"
       - --max-model-len
-      - "16384"
+      - "32768"
       - --max-num-seqs
       - "40"
       - --max-num-batched-tokens
@@ -327,7 +327,7 @@ services:
       - --port
       - "8001"
       - --max-model-len
-      - "2048"
+      - "8192"
       - --enforce-eager
       - --trust-remote-code
     environment:
