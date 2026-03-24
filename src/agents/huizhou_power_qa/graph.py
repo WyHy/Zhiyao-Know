@@ -22,8 +22,8 @@ class HuizhouPowerQAAgent(BaseAgent):
             system_prompt=context.system_prompt,
             middleware=[
                 inject_attachment_context,
-                RuntimeConfigMiddleware(extra_tools=all_mcp_tools),
                 ModelRetryMiddleware(),
+                RuntimeConfigMiddleware(extra_tools=all_mcp_tools),
             ],
             checkpointer=await self._get_checkpointer(),
         )

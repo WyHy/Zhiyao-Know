@@ -31,8 +31,8 @@ class ChatbotAgent(BaseAgent):
             system_prompt=context.system_prompt,
             middleware=[
                 inject_attachment_context,  # 附件上下文注入
-                RuntimeConfigMiddleware(extra_tools=all_mcp_tools),  # 运行时配置应用（模型/工具/知识库/MCP/提示词）
                 ModelRetryMiddleware(),  # 模型重试中间件
+                RuntimeConfigMiddleware(extra_tools=all_mcp_tools),  # 运行时配置应用（模型/工具/知识库/MCP/提示词）
             ],
             checkpointer=await self._get_checkpointer(),
         )
