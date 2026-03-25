@@ -28,11 +28,10 @@ class ChatbotAgent(BaseAgent):
         # 注意：tools 参数由 RuntimeConfigMiddleware 在 wrap_model_call 中动态设置
         graph = create_agent(
             model=load_chat_model(context.model),
-            system_prompt=context.system_prompt,
             middleware=[
                 inject_attachment_context,  # 附件上下文注入
-                RuntimeConfigMiddleware(extra_tools=all_mcp_tools),  # 运行时配置应用（模型/工具/知识库/MCP/提示词）
                 ModelRetryMiddleware(),  # 模型重试中间件
+                RuntimeConfigMiddleware(extra_tools=all_mcp_tools),  # 运行时配置应用（模型/工具/知识库/MCP/提示词）
             ],
             checkpointer=await self._get_checkpointer(),
         )

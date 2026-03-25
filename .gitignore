@@ -84,3 +84,4 @@ test/data/*.jsonl
 */ocr_test/*
 !test/data/ocr_test/PixPin_2025-06-19_23-42-17.png
 docker/nltk_data/
+release_artifacts/

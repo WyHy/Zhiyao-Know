@@ -19,9 +19,9 @@
           <a-alert type="error" :message="departmentManagement.error" show-icon />
         </div>
 
-        <template v-if="departmentManagement.departments.length > 0">
+        <template v-if="departmentManagement.departmentTree.length > 0">
           <a-table
-            :dataSource="departmentManagement.departments"
+            :dataSource="departmentManagement.departmentTree"
             :columns="columns"
             :rowKey="(record) => record.id"
             :pagination="false"
@@ -71,7 +71,7 @@
                       size="small"
                       danger
                       @click="confirmDeleteDepartment(record)"
-                      :disabled="record.user_count > 0 || record.hasChildren"
+                      :disabled="record.user_count > 0 || (record.children && record.children.length > 0)"
                       class="action-btn"
                     >
                       <DeleteOutlined />
@@ -203,9 +203,9 @@ const flattenDepartmentsForSelect = (deptList, result = [], excludeId = null, le
 
 // 上级部门选项
 const parentDepartmentOptions = computed(() => {
-  if (!departmentManagement.departments.length) return []
+  if (!departmentManagement.departmentTree.length) return []
   const excludeId = departmentManagement.editMode ? departmentManagement.editDepartmentId : null
-  return flattenDepartmentsForSelect(departmentManagement.departments, [], excludeId)
+  return flattenDepartmentsForSelect(departmentManagement.departmentTree, [], excludeId)
 })
 
 // 获取级别颜色
@@ -320,9 +320,8 @@ const fetchDepartments = async () => {
     // 保存原始树形数据（用于父部门选择器）
     departmentManagement.departmentTree = treeData
     
-    // 将树形结构扁平化（用于表格显示）
+    // 兼容已有依赖，保留扁平数据
     const flatDepartments = flattenDepartmentTree(treeData)
-    
     departmentManagement.departments = flatDepartments
   } catch (error) {
     console.error('获取部门列表失败:', error)

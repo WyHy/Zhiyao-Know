@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -10,21 +12,104 @@ from src.agents.common.tools import get_kb_based_tools, get_buildin_tools
 from src.services.mcp_service import get_enabled_mcp_tools
 from src.utils.logging_config import logger
 
+CHINESE_OUTPUT_GUARD_PROMPT = (
+    "【语言约束】你必须全程使用简体中文输出，包括推理内容与最终答复。"
+    "除非用户明确要求英文或翻译任务，否则禁止输出英文句子。"
+    "若必须出现英文缩写或术语（如 API、SQL、HTTP、ID），请先写中文，再在括号内补充英文。"
+)
+
+
+def _is_system_like_role(role: Any) -> bool:
+    if role is None:
+        return False
+    role_text = str(role).strip().lower()
+    return role_text in {"system", "developer"}
+
 
 def _is_system_message(msg: Any) -> bool:
     if isinstance(msg, dict):
         role = msg.get("role") or msg.get("type")
-        return role == "system"
+        return _is_system_like_role(role)
+    if isinstance(msg, (tuple, list)) and len(msg) >= 1:
+        return _is_system_like_role(msg[0])
     msg_type = getattr(msg, "type", None) or getattr(msg, "role", None)
-    return msg_type == "system"
+    if _is_system_like_role(msg_type):
+        return True
+    # Fallback for message classes that don't expose role/type directly.
+    class_name = msg.__class__.__name__.lower()
+    if "system" in class_name or "developer" in class_name:
+        return True
+    # Some wrappers store role in extra/additional kwargs.
+    additional_kwargs = getattr(msg, "additional_kwargs", None)
+    if isinstance(additional_kwargs, dict) and _is_system_like_role(additional_kwargs.get("role")):
+        return True
+    extra = getattr(msg, "extra", None)
+    if isinstance(extra, dict) and _is_system_like_role(extra.get("role")):
+        return True
+    return False
+
+
+def _is_user_message(msg: Any) -> bool:
+    if isinstance(msg, dict):
+        role = msg.get("role") or msg.get("type")
+        return role in {"user", "human"}
+    msg_type = getattr(msg, "type", None) or getattr(msg, "role", None)
+    return msg_type in {"user", "human"}
 
 
 def _get_message_content(msg: Any) -> str | None:
     if isinstance(msg, dict):
         content = msg.get("content")
         return str(content) if content is not None else None
+    if isinstance(msg, (tuple, list)) and len(msg) >= 2:
+        content = msg[1]
+        return str(content) if content is not None else None
     content = getattr(msg, "content", None)
     return str(content) if content is not None else None
+
+
+def _has_language_guard_prompt(msg: Any) -> bool:
+    content = _get_message_content(msg)
+    return isinstance(content, str) and "【语言约束】" in content
+
+
+def _partition_messages_system_first(messages: list[Any]) -> tuple[list[Any], list[Any]]:
+    systems: list[Any] = []
+    remaining: list[Any] = []
+    for msg in messages:
+        if _is_system_message(msg):
+            systems.append(msg)
+        else:
+            remaining.append(msg)
+    return systems, remaining
+
+
+def _message_role_label(msg: Any) -> str:
+    if isinstance(msg, dict):
+        role = msg.get("role") or msg.get("type")
+        if role is not None:
+            return str(role)
+    if isinstance(msg, (tuple, list)) and len(msg) >= 1:
+        return str(msg[0])
+    role = getattr(msg, "role", None) or getattr(msg, "type", None)
+    if role is not None:
+        return str(role)
+    additional_kwargs = getattr(msg, "additional_kwargs", None)
+    if isinstance(additional_kwargs, dict) and additional_kwargs.get("role") is not None:
+        return str(additional_kwargs.get("role"))
+    return msg.__class__.__name__
+
+
+def _system_out_of_prefix_positions(messages: list[Any]) -> list[int]:
+    positions: list[int] = []
+    seen_non_system = False
+    for idx, msg in enumerate(messages):
+        if _is_system_message(msg):
+            if seen_non_system:
+                positions.append(idx)
+        else:
+            seen_non_system = True
+    return positions
 
 
 def _safe_preview(text: str | None, limit: int = 300) -> str:
@@ -53,6 +138,33 @@ def _message_snapshot(msg: Any) -> dict[str, Any]:
     return {"role": role, "content_preview": content}
 
 
+def _message_to_log_payload(msg: Any) -> dict[str, Any]:
+    role = _message_role_label(msg)
+    content = _get_message_content(msg)
+    payload: dict[str, Any] = {
+        "role": role,
+        "content": content if content is not None else "",
+    }
+    if isinstance(msg, dict):
+        if msg.get("tool_calls") is not None:
+            payload["tool_calls"] = msg.get("tool_calls")
+        if msg.get("tool_call_id") is not None:
+            payload["tool_call_id"] = msg.get("tool_call_id")
+        if msg.get("name") is not None:
+            payload["name"] = msg.get("name")
+    else:
+        tool_calls = getattr(msg, "tool_calls", None)
+        if tool_calls is not None:
+            payload["tool_calls"] = tool_calls
+        tool_call_id = getattr(msg, "tool_call_id", None)
+        if tool_call_id is not None:
+            payload["tool_call_id"] = tool_call_id
+        name = getattr(msg, "name", None)
+        if name is not None:
+            payload["name"] = name
+    return payload
+
+
 def _extract_llm_error_snapshot(e: Exception) -> dict[str, Any]:
     response = getattr(e, "response", None)
     response_text = None
@@ -74,6 +186,149 @@ def _extract_llm_error_snapshot(e: Exception) -> dict[str, Any]:
         "error_response_text": _safe_preview(response_text, limit=2000) if response_text else None,
         "error_response_repr": _safe_repr(response, limit=2000) if response is not None else None,
     }
+
+
+def _get_token_encoder():
+    try:
+        import tiktoken
+
+        try:
+            return tiktoken.get_encoding("o200k_base")
+        except Exception:
+            return tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        return None
+
+
+_TOKEN_ENCODER = _get_token_encoder()
+
+
+def _estimate_text_tokens(text: str) -> int:
+    if not text:
+        return 0
+    if _TOKEN_ENCODER is not None:
+        try:
+            return len(_TOKEN_ENCODER.encode(text, disallowed_special=()))
+        except Exception:
+            pass
+    # Fallback: 粗略估算，避免 tokenizer 不可用时失去保护
+    return max(1, len(text) // 4)
+
+
+def _message_to_token_text(msg: Any) -> str:
+    if isinstance(msg, dict):
+        role = msg.get("role") or msg.get("type") or "unknown"
+        content = msg.get("content", "")
+    else:
+        role = getattr(msg, "role", None) or getattr(msg, "type", None) or "unknown"
+        content = getattr(msg, "content", "")
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                item_type = item.get("type")
+                if item_type == "text":
+                    parts.append(str(item.get("text", "")))
+                elif item_type == "image_url":
+                    parts.append("[image]")
+                else:
+                    parts.append(json.dumps(item, ensure_ascii=False))
+            else:
+                parts.append(str(item))
+        content_text = "\n".join(parts)
+    elif isinstance(content, dict):
+        content_text = json.dumps(content, ensure_ascii=False)
+    else:
+        content_text = str(content)
+
+    return f"{role}: {content_text}\n"
+
+
+def _estimate_messages_tokens(messages: list[Any]) -> int:
+    return sum(_estimate_text_tokens(_message_to_token_text(msg)) for msg in messages)
+
+
+def _get_input_token_budget() -> int:
+    context_window = int(os.getenv("YUXI_CHAT_CONTEXT_WINDOW", "16384"))
+    input_ratio = float(os.getenv("YUXI_CHAT_INPUT_TOKEN_RATIO", "0.9"))
+    output_reserve = int(os.getenv("YUXI_CHAT_OUTPUT_TOKEN_RESERVE", "1024"))
+    ratio_budget = int(context_window * input_ratio)
+    reserve_budget = context_window - output_reserve
+    budget = min(ratio_budget, reserve_budget)
+    return max(512, budget)
+
+
+def _is_context_length_error(e: Exception) -> bool:
+    text = str(e).lower()
+    return (
+        "context length" in text
+        or "input_tokens" in text
+        or "maximum input length" in text
+        or "max context length" in text
+    )
+
+
+def _trim_oldest_non_system_messages(messages: list[Any], drop_count: int) -> list[Any]:
+    systems: list[Any] = []
+    non_systems: list[Any] = []
+    for msg in messages:
+        if _is_system_message(msg):
+            systems.append(msg)
+        else:
+            non_systems.append(msg)
+
+    # 必须保留最新 user/human 消息，避免下游模型报 "No user query found in messages"
+    last_user_idx = -1
+    for i in range(len(non_systems) - 1, -1, -1):
+        if _is_user_message(non_systems[i]):
+            last_user_idx = i
+            break
+
+    # 没有 user/human 的请求，不做裁剪（例如某些工具链内部阶段）
+    if last_user_idx < 0:
+        return messages
+
+    # 至少保留：最新 user/human + 其后一条消息（如果存在）
+    min_keep_non_system = max(1, len(non_systems) - last_user_idx)
+    if len(non_systems) <= min_keep_non_system:
+        return messages
+
+    keep_non_system = max(min_keep_non_system, len(non_systems) - drop_count)
+    trimmed_non_systems = non_systems[-keep_non_system:]
+    return [*systems, *trimmed_non_systems]
+
+
+def _trim_messages_to_token_budget(messages: list[Any], budget: int) -> tuple[list[Any], int]:
+    current = list(messages)
+    # 没有 user/human 时不做前置裁剪，避免破坏工具链内部调用
+    if not any(_is_user_message(msg) for msg in current):
+        return current, _estimate_messages_tokens(current)
+
+    estimated = _estimate_messages_tokens(current)
+    if estimated <= budget:
+        return current, estimated
+
+    # 分批删除最旧历史消息，避免逐条删除造成多次重复估算
+    drop_steps = [4, 8, 12, 16, 24, 32]
+    for drop_count in drop_steps:
+        trimmed = _trim_oldest_non_system_messages(current, drop_count=drop_count)
+        if len(trimmed) >= len(current):
+            break
+        current = trimmed
+        estimated = _estimate_messages_tokens(current)
+        if estimated <= budget:
+            return current, estimated
+
+    # 仍超限时，继续强制每次删 1 条，直到达到预算或触达最小保留
+    while estimated > budget:
+        trimmed = _trim_oldest_non_system_messages(current, drop_count=1)
+        if len(trimmed) >= len(current):
+            break
+        current = trimmed
+        estimated = _estimate_messages_tokens(current)
+
+    return current, estimated
 
 
 class RuntimeConfigMiddleware(AgentMiddleware):
@@ -108,17 +363,60 @@ class RuntimeConfigMiddleware(AgentMiddleware):
 
         # vLLM/HF chat template requires every system message to be at the beginning.
         # Partition messages globally so no system message remains in the middle/tail.
-        existing_systems: list[Any] = []
-        remaining: list[Any] = []
-        for msg in request.messages:
-            if _is_system_message(msg):
-                existing_systems.append(msg)
-            else:
-                remaining.append(msg)
+        existing_systems, remaining = _partition_messages_system_first(list(request.messages))
 
-        # Keep create_agent(system_prompt=...) as the single source of system prompt.
-        # Runtime middleware only normalizes ordering for vLLM compatibility.
-        messages = [*existing_systems, *remaining]
+        runtime_system_prompt = str(getattr(runtime_context, "system_prompt", "") or "").strip()
+        merged_system_contents: list[str] = []
+        seen_system_contents: set[str] = set()
+
+        def _append_system_content(text: str | None):
+            if not text:
+                return
+            normalized = str(text).strip()
+            if not normalized or normalized in seen_system_contents:
+                return
+            seen_system_contents.add(normalized)
+            merged_system_contents.append(normalized)
+
+        # Put runtime configured system prompt first, then append other collected system prompts.
+        _append_system_content(runtime_system_prompt)
+        for system_msg in existing_systems:
+            _append_system_content(_get_message_content(system_msg))
+
+        if not any("【语言约束】" in c for c in merged_system_contents):
+            _append_system_content(CHINESE_OUTPUT_GUARD_PROMPT)
+
+        merged_system_message = (
+            [{"role": "system", "content": "\n\n".join(merged_system_contents)}]
+            if merged_system_contents
+            else []
+        )
+
+        messages = [*merged_system_message, *remaining]
+        # Final safeguard: re-partition once more to tolerate unrecognized message wrappers.
+        systems2, remaining2 = _partition_messages_system_first(messages)
+        messages = [*systems2, *remaining2]
+        out_of_prefix_positions = _system_out_of_prefix_positions(messages)
+        if out_of_prefix_positions:
+            logger.warning(
+                "Detected non-prefix system/developer messages before model call, "
+                f"positions={out_of_prefix_positions}. Forcing reorder again."
+            )
+            s3, r3 = _partition_messages_system_first(messages)
+            messages = [*s3, *r3]
+
+        # 前置裁剪：调用模型前先按 token 预算裁剪最旧历史消息，减少超限重试。
+        token_budget = _get_input_token_budget()
+        estimated_tokens_before = _estimate_messages_tokens(messages)
+        trimmed_messages, estimated_tokens_after = _trim_messages_to_token_budget(messages, token_budget)
+        if len(trimmed_messages) < len(messages):
+            logger.warning(
+                "Pre-trimmed chat history before model call: "
+                f"messages {len(messages)} -> {len(trimmed_messages)}, "
+                f"tokens_est {estimated_tokens_before} -> {estimated_tokens_after}, "
+                f"budget={token_budget}"
+            )
+        messages = trimmed_messages
 
         request = request.override(model=model, tools=enabled_tools, messages=messages)
 
@@ -133,6 +431,7 @@ class RuntimeConfigMiddleware(AgentMiddleware):
         model_kwargs = getattr(model, "model_kwargs", None) or {}
         debug_snapshot = {
             "runtime_model_spec": getattr(runtime_context, "model", None),
+            "runtime_system_prompt_preview": _safe_preview(getattr(runtime_context, "system_prompt", ""), limit=1200),
             "resolved_model_name": model_name,
             "resolved_model_identifier": model_identifier,
             "resolved_model_base_url": model_base_url,
@@ -140,28 +439,56 @@ class RuntimeConfigMiddleware(AgentMiddleware):
             "tool_names": [t.name for t in enabled_tools],
             "tool_count": len(enabled_tools),
             "message_count": len(messages),
+            "estimated_tokens": estimated_tokens_after,
+            "token_budget": token_budget,
             "messages_preview": [_message_snapshot(m) for m in messages[:6]],
+            "messages_full": [_message_to_log_payload(m) for m in messages],
+            "message_roles": [f"{idx}:{_message_role_label(m)}" for idx, m in enumerate(messages[:80])],
+            "system_out_of_prefix_positions": _system_out_of_prefix_positions(messages),
         }
 
-        # Always log request snapshot before calling model so 4xx cases are observable
-        # even if lower layers handle/retry without bubbling an exception.
-        logger.warning(f"RuntimeConfigMiddleware model call request: {debug_snapshot}")
+        # Keep request snapshot for troubleshooting, but avoid high-volume warning logs in production.
+        logger.debug(f"RuntimeConfigMiddleware model call request: {debug_snapshot}")
 
-        try:
-            response = await handler(request)
-            logger.warning(
-                "RuntimeConfigMiddleware model call response: "
-                f"{{'response_type': '{type(response).__name__}', 'response_preview': '{_safe_repr(response)}'}}"
-            )
-            return response
-        except Exception as e:
-            error_snapshot = _extract_llm_error_snapshot(e)
-            logger.error(
-                f"RuntimeConfigMiddleware model call failed: {type(e).__name__}: {e}\n"
-                f"Request snapshot: {debug_snapshot}\n"
-                f"LLM error snapshot: {error_snapshot}"
-            )
-            raise
+        current_request = request
+        current_messages = list(messages)
+
+        # 上下文超长时，逐步裁剪最旧历史消息并重试，避免长对话直接 400 失败。
+        trim_drop_steps = [4, 8, 12]
+
+        for attempt in range(len(trim_drop_steps) + 1):
+            try:
+                response = await handler(current_request)
+                # Do not log full response payload; large model outputs can flood logs and block streaming.
+                logger.debug(
+                    "RuntimeConfigMiddleware model call response: "
+                    f"{{'response_type': '{type(response).__name__}'}}"
+                )
+                return response
+            except Exception as e:
+                error_snapshot = _extract_llm_error_snapshot(e)
+                logger.error(
+                    f"RuntimeConfigMiddleware model call failed: {type(e).__name__}: {e}\n"
+                    f"Request snapshot: {debug_snapshot}\n"
+                    f"LLM error snapshot: {error_snapshot}"
+                )
+
+                if attempt >= len(trim_drop_steps) or not _is_context_length_error(e):
+                    raise
+
+                drop_count = trim_drop_steps[attempt]
+                trimmed_messages = _trim_oldest_non_system_messages(current_messages, drop_count=drop_count)
+                if len(trimmed_messages) >= len(current_messages):
+                    raise
+
+                logger.warning(
+                    "Detected context-length overflow, retrying with trimmed history: "
+                    f"attempt={attempt + 1}, original_messages={len(current_messages)}, "
+                    f"trimmed_messages={len(trimmed_messages)}, drop_count={drop_count}"
+                )
+
+                current_messages = trimmed_messages
+                current_request = current_request.override(messages=current_messages)
 
     async def get_tools_from_context(self, context) -> list:
         """从上下文配置中获取工具列表"""

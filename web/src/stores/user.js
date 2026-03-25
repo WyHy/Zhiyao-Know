@@ -297,7 +297,9 @@ export const useUserStore = defineStore('user', () => {
       })
 
       if (!response.ok) {
-        throw new Error('获取用户信息失败')
+        const error = new Error('获取用户信息失败')
+        error.status = response.status
+        throw error
       }
 
       const userData = await response.json()
