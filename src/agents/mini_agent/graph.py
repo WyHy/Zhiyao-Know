@@ -21,7 +21,6 @@ class MiniAgent(BaseAgent):
 
         graph = create_agent(
             model=load_chat_model(context.model),
-            system_prompt=context.system_prompt,
             middleware=[
                 RuntimeConfigMiddleware(extra_tools=all_mcp_tools),
             ],

@@ -163,9 +163,12 @@ router.beforeEach(async (to, from, next) => {
     try {
       await userStore.getCurrentUser()
     } catch (error) {
-      // 如果获取用户信息失败（如 token 过期），清除 token
+      // 仅在认证失效时清除 token；临时网络错误不应把用户踢回登录页
       console.error('获取用户信息失败:', error)
-      userStore.logout()
+      const status = Number(error?.status)
+      if (status === 401 || status === 403) {
+        userStore.logout()
+      }
     }
   }
 

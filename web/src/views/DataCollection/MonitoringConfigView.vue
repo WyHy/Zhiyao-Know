@@ -3,6 +3,7 @@
     <div class="page-header">
       <div></div>
       <a-space>
+        <a-button type="default" @click="openLawDatabase">法律法规数据库</a-button>
         <a-button type="default" @click="reloadAll" :loading="loadingAll">刷新数据</a-button>
       </a-space>
     </div>
@@ -946,6 +947,10 @@ const exportLogs = () => {
     params.end_date = logDateRange.value[1]
   }
   window.open(crawlerApi.exportLogsUrl(params), '_blank')
+}
+
+const openLawDatabase = () => {
+  window.open('http://sglaw.sgcc.com.cn:18081/#/law', '_blank', 'noopener,noreferrer')
 }
 
 const taskForm = reactive({

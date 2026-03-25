@@ -112,9 +112,9 @@ const mainList = computed(() => {
     hidden: false
   })
 
-  // 营销菜单（带选择智能体按钮，固定 HuizhouPowerQAAgent，所有用户可见）
+  // 综合能源监管专题菜单（带选择智能体按钮，固定 HuizhouPowerQAAgent，所有用户可见）
   list.push({
-    name: '营销',
+    name: '综合能源监管专题',
     path: '/chat-with-agent',
     icon: Bot,
     activeIcon: Bot,

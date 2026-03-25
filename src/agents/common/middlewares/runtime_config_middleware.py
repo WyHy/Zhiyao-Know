@@ -138,6 +138,33 @@ def _message_snapshot(msg: Any) -> dict[str, Any]:
     return {"role": role, "content_preview": content}
 
 
+def _message_to_log_payload(msg: Any) -> dict[str, Any]:
+    role = _message_role_label(msg)
+    content = _get_message_content(msg)
+    payload: dict[str, Any] = {
+        "role": role,
+        "content": content if content is not None else "",
+    }
+    if isinstance(msg, dict):
+        if msg.get("tool_calls") is not None:
+            payload["tool_calls"] = msg.get("tool_calls")
+        if msg.get("tool_call_id") is not None:
+            payload["tool_call_id"] = msg.get("tool_call_id")
+        if msg.get("name") is not None:
+            payload["name"] = msg.get("name")
+    else:
+        tool_calls = getattr(msg, "tool_calls", None)
+        if tool_calls is not None:
+            payload["tool_calls"] = tool_calls
+        tool_call_id = getattr(msg, "tool_call_id", None)
+        if tool_call_id is not None:
+            payload["tool_call_id"] = tool_call_id
+        name = getattr(msg, "name", None)
+        if name is not None:
+            payload["name"] = name
+    return payload
+
+
 def _extract_llm_error_snapshot(e: Exception) -> dict[str, Any]:
     response = getattr(e, "response", None)
     response_text = None
@@ -338,13 +365,34 @@ class RuntimeConfigMiddleware(AgentMiddleware):
         # Partition messages globally so no system message remains in the middle/tail.
         existing_systems, remaining = _partition_messages_system_first(list(request.messages))
 
-        # Keep create_agent(system_prompt=...) as the single source of system prompt.
-        # Runtime middleware only normalizes ordering for vLLM compatibility.
-        has_language_guard = any(_has_language_guard_prompt(msg) for msg in existing_systems)
-        if not has_language_guard:
-            existing_systems.append({"role": "system", "content": CHINESE_OUTPUT_GUARD_PROMPT})
+        runtime_system_prompt = str(getattr(runtime_context, "system_prompt", "") or "").strip()
+        merged_system_contents: list[str] = []
+        seen_system_contents: set[str] = set()
 
-        messages = [*existing_systems, *remaining]
+        def _append_system_content(text: str | None):
+            if not text:
+                return
+            normalized = str(text).strip()
+            if not normalized or normalized in seen_system_contents:
+                return
+            seen_system_contents.add(normalized)
+            merged_system_contents.append(normalized)
+
+        # Put runtime configured system prompt first, then append other collected system prompts.
+        _append_system_content(runtime_system_prompt)
+        for system_msg in existing_systems:
+            _append_system_content(_get_message_content(system_msg))
+
+        if not any("【语言约束】" in c for c in merged_system_contents):
+            _append_system_content(CHINESE_OUTPUT_GUARD_PROMPT)
+
+        merged_system_message = (
+            [{"role": "system", "content": "\n\n".join(merged_system_contents)}]
+            if merged_system_contents
+            else []
+        )
+
+        messages = [*merged_system_message, *remaining]
         # Final safeguard: re-partition once more to tolerate unrecognized message wrappers.
         systems2, remaining2 = _partition_messages_system_first(messages)
         messages = [*systems2, *remaining2]
@@ -383,6 +431,7 @@ class RuntimeConfigMiddleware(AgentMiddleware):
         model_kwargs = getattr(model, "model_kwargs", None) or {}
         debug_snapshot = {
             "runtime_model_spec": getattr(runtime_context, "model", None),
+            "runtime_system_prompt_preview": _safe_preview(getattr(runtime_context, "system_prompt", ""), limit=1200),
             "resolved_model_name": model_name,
             "resolved_model_identifier": model_identifier,
             "resolved_model_base_url": model_base_url,
@@ -393,6 +442,7 @@ class RuntimeConfigMiddleware(AgentMiddleware):
             "estimated_tokens": estimated_tokens_after,
             "token_budget": token_budget,
             "messages_preview": [_message_snapshot(m) for m in messages[:6]],
+            "messages_full": [_message_to_log_payload(m) for m in messages],
             "message_roles": [f"{idx}:{_message_role_label(m)}" for idx, m in enumerate(messages[:80])],
             "system_out_of_prefix_positions": _system_out_of_prefix_positions(messages),
         }

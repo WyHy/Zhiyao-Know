@@ -83,15 +83,35 @@ export function useAgentStreamHandler({
 
     switch (status) {
       case 'init':
+        threadState.onGoingConv.currentRequestKey = request_id || null
+        threadState.onGoingConv.currentAssistantKey = null
         threadState.onGoingConv.msgChunks[request_id] = [msg]
         return false
 
       case 'loading':
-        if (msg.id) {
-          if (!threadState.onGoingConv.msgChunks[msg.id]) {
-            threadState.onGoingConv.msgChunks[msg.id] = []
+        if (msg) {
+          const onGoingConv = threadState.onGoingConv
+          const isAssistantChunk =
+            msg.type === 'AIMessageChunk' || msg.type === 'ai' || msg.role === 'assistant'
+
+          let targetKey = msg.id
+          if (isAssistantChunk) {
+            if (!onGoingConv.currentAssistantKey) {
+              onGoingConv.currentAssistantKey =
+                msg.id || `assistant-${onGoingConv.currentRequestKey || request_id || threadId}`
+            }
+            targetKey = onGoingConv.currentAssistantKey
+            if (!msg.id) {
+              msg.id = targetKey
+            }
+          } else if (!targetKey) {
+            targetKey = onGoingConv.currentRequestKey || request_id || `stream-${threadId}`
           }
-          threadState.onGoingConv.msgChunks[msg.id].push(msg)
+
+          if (!onGoingConv.msgChunks[targetKey]) {
+            onGoingConv.msgChunks[targetKey] = []
+          }
+          onGoingConv.msgChunks[targetKey].push(msg)
         }
         return false
 

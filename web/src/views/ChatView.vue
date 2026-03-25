@@ -40,7 +40,7 @@
           >
             <AgentMessageComponent
               v-for="(msg, msgIndex) in conversation.messages"
-              :key="`msg-${convIndex}-${msgIndex}-${msg.id || msg.type}-${msg.content?.length || 0}`"
+              :key="msg.id || `msg-${convIndex}-${msgIndex}-${msg.type || 'unknown'}`"
               :message="msg"
               :is-processing="
                 isProcessing &&

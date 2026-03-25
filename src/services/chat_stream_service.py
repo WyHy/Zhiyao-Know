@@ -364,6 +364,7 @@ async def stream_agent_chat(
 
         full_msg = None
         accumulated_content = []
+        assistant_stream_message_id: str | None = None
         langgraph_config = {"configurable": {"thread_id": thread_id, "user_id": user_id}}
         async for msg, metadata in agent.stream_messages(messages, input_context=input_context):
             if isinstance(msg, AIMessageChunk):
@@ -377,7 +378,15 @@ async def stream_agent_chat(
                     yield make_chunk(status="interrupted", message="检测到敏感内容，已中断输出", meta=meta)
                     return
 
-                yield make_chunk(content=msg.content, msg=msg.model_dump(), metadata=metadata, status="loading")
+                msg_dict = msg.model_dump()
+                # Keep one stable id for the same assistant streaming reply.
+                # Some providers/chains emit per-chunk ids, which would be rendered as many
+                # separate bubbles on the frontend (fast "screen flooding").
+                if not assistant_stream_message_id:
+                    assistant_stream_message_id = msg_dict.get("id") or str(uuid.uuid4())
+                msg_dict["id"] = assistant_stream_message_id
+
+                yield make_chunk(content=msg.content, msg=msg_dict, metadata=metadata, status="loading")
             else:
                 msg_dict = msg.model_dump()
                 yield make_chunk(msg=msg_dict, metadata=metadata, status="loading")

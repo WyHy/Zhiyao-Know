@@ -111,11 +111,9 @@ class DeepAgent(BaseAgent):
         # 使用 create_deep_agent 创建深度智能体
         graph = create_agent(
             model=model,
-            system_prompt=context.system_prompt,
             middleware=[
                 context_aware_prompt,  # 动态系统提示词
                 inject_attachment_context,  # 附件上下文注入
-                RuntimeConfigMiddleware(extra_tools=all_mcp_tools),
                 TodoListMiddleware(),
                 FilesystemMiddleware(),
                 SubAgentMiddleware(
@@ -142,6 +140,7 @@ class DeepAgent(BaseAgent):
                     trim_tokens_to_summarize=None,
                 ),
                 PatchToolCallsMiddleware(),
+                RuntimeConfigMiddleware(extra_tools=all_mcp_tools),
             ],
             checkpointer=await self._get_checkpointer(),
         )
