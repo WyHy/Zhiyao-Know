@@ -129,6 +129,15 @@ const mainList = computed(() => {
     activeIcon: FileSearch,
     hidden: false
   })
+
+  // 合规风险中心（所有用户可见）
+  list.push({
+    name: '合规风险中心',
+    path: '/compliance-risk',
+    icon: FileCheck,
+    activeIcon: FileCheck,
+    hidden: false
+  })
   
   // 知识库管理菜单（仅管理员可见）
   if (isAdmin) {

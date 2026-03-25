@@ -4,6 +4,10 @@ import BlankLayout from '@/layouts/BlankLayout.vue'
 import { useUserStore } from '@/stores/user'
 import { useAgentStore } from '@/stores/agent'
 
+// 临时：无后台/联调阶段可跳过登录（随时可改回）
+// 用法：在 `web/.env.local`（或对应环境文件）里加 `VITE_BYPASS_AUTH=true`
+const BYPASS_AUTH = import.meta.env.VITE_BYPASS_AUTH === 'true'
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -142,6 +146,73 @@ const router = createRouter({
       ]
     },
     {
+      path: '/compliance-risk',
+      name: 'compliance-risk',
+      component: AppLayout,
+      children: [
+        {
+          path: '',
+          name: 'ComplianceRiskLayoutComp',
+          component: () => import('../views/ComplianceRisk/ComplianceRiskLayout.vue'),
+          meta: { keepAlive: false, requiresAuth: true },
+          children: [
+            {
+              path: '',
+              redirect: '/compliance-risk/knowledge'
+            },
+            {
+              path: 'knowledge',
+              name: 'ComplianceKnowledgeCenterComp',
+              component: () => import('../views/ComplianceRisk/ComplianceKnowledgeCenterView.vue'),
+              meta: { keepAlive: false, requiresAuth: true }
+            },
+            {
+              path: 'risk-library',
+              name: 'ComplianceRiskLibraryComp',
+              component: () => import('../views/ComplianceRisk/ComplianceRiskLibraryView.vue'),
+              meta: { keepAlive: false, requiresAuth: true }
+            },
+            {
+              path: 'risk-library/:risk_id',
+              name: 'ComplianceRiskLibraryDetailComp',
+              component: () => import('../views/ComplianceRisk/ComplianceRiskLibraryDetailView.vue'),
+              meta: { keepAlive: false, requiresAuth: true }
+            },
+            {
+              path: 'process-checklist',
+              name: 'ComplianceProcessChecklistComp',
+              component: () => import('../views/ComplianceRisk/ComplianceProcessChecklistView.vue'),
+              meta: { keepAlive: false, requiresAuth: true }
+            },
+            {
+              path: 'process-checklist/:process_id',
+              name: 'ComplianceProcessChecklistDetailComp',
+              component: () => import('../views/ComplianceRisk/ComplianceProcessChecklistDetailView.vue'),
+              meta: { keepAlive: false, requiresAuth: true }
+            },
+            {
+              path: 'position-responsibility',
+              name: 'CompliancePositionResponsibilityComp',
+              component: () => import('../views/ComplianceRisk/CompliancePositionResponsibilityView.vue'),
+              meta: { keepAlive: false, requiresAuth: true }
+            },
+            {
+              path: 'position-responsibility/:position_id',
+              name: 'CompliancePositionResponsibilityDetailComp',
+              component: () => import('../views/ComplianceRisk/CompliancePositionResponsibilityDetailView.vue'),
+              meta: { keepAlive: false, requiresAuth: true }
+            },
+            {
+              path: 'data-import',
+              name: 'ComplianceDataImportComp',
+              component: () => import('../views/ComplianceRisk/ComplianceDataImportView.vue'),
+              meta: { keepAlive: false, requiresAuth: true }
+            }
+          ]
+        }
+      ]
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',
       component: () => import('../views/EmptyView.vue'),
@@ -152,6 +223,16 @@ const router = createRouter({
 
 // 全局前置守卫
 router.beforeEach(async (to, from, next) => {
+  // 临时跳过登录：默认让 `/` 进入“首页”（这里用知识库页）
+  if (BYPASS_AUTH) {
+    if (to.path === '/') {
+      next('/knowledge')
+      return
+    }
+    next()
+    return
+  }
+
   // 检查路由是否需要认证
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth === true)
   const requiresAdmin = to.matched.some((record) => record.meta.requiresAdmin)
