@@ -170,8 +170,27 @@
                 :class="{ active: currentThreadId === chat.id }"
                 @click="selectChat(chat)"
               >
-                <div class="conversation-title">
-                  {{ chat.title || '新的对话' }}
+                <div class="conversation-row">
+                  <div class="conversation-title">
+                    {{ chat.title || '新的对话' }}
+                  </div>
+                  <div class="conversation-actions" @click.stop>
+                    <a-dropdown :trigger="['click']">
+                      <button class="conversation-more-btn" title="更多操作" @click.stop>
+                        <MoreHorizontal :size="16" />
+                      </button>
+                      <template #overlay>
+                        <a-menu>
+                          <a-menu-item key="delete" @click="confirmDeleteChat(chat.id)">
+                            <span class="menu-item-content">
+                              <Trash2 :size="14" />
+                              删除
+                            </span>
+                          </a-menu-item>
+                        </a-menu>
+                      </template>
+                    </a-dropdown>
+                  </div>
                 </div>
               </div>
             </div>
@@ -324,9 +343,9 @@ import { MessageProcessor } from '@/utils/messageProcessor'
 import dayjs, { parseToShanghai } from '@/utils/time'
 import AgentMessageComponent from '@/components/AgentMessageComponent.vue'
 import ImagePreviewComponent from '@/components/ImagePreviewComponent.vue'
-import { Hand, FileText, Image, X, Plus, Download, Trash2, Info, Square, Bot } from 'lucide-vue-next'
+import { Hand, FileText, Image, X, Plus, Download, Trash2, Info, Square, Bot, MoreHorizontal } from 'lucide-vue-next'
 import { StarFilled, StarOutlined } from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { handleChatError } from '@/utils/errorHandler'
 import { formatFileSize } from '@/utils/file_utils'
 import { useAgentStreamHandler } from '@/composables/useAgentStreamHandler'
@@ -614,6 +633,52 @@ const selectChat = async (chat) => {
 
   await nextTick()
   scrollToBottom()
+}
+
+const deleteChat = async (chatId) => {
+  if (!chatId) return
+
+  try {
+    const threadState = getThreadState(chatId)
+    if (threadState?.isStreaming && threadState.streamAbortController) {
+      threadState.streamAbortController.abort()
+      threadState.isStreaming = false
+      threadState.streamAbortController = null
+    }
+
+    await threadApi.deleteThread(chatId)
+    threads.value = (threads.value || []).filter((thread) => thread.id !== chatId)
+    delete threadMessages.value[chatId]
+    delete threadStates[chatId]
+
+    if (currentThreadId.value === chatId) {
+      const nextChat = threads.value[0]
+      if (nextChat) {
+        await selectChat(nextChat)
+      } else {
+        currentThreadId.value = null
+        threadAttachments.value = []
+      }
+    }
+
+    message.success('删除成功')
+  } catch (error) {
+    console.error('删除对话失败:', error)
+    handleChatError(error, 'delete')
+  }
+}
+
+const confirmDeleteChat = (chatId) => {
+  if (!chatId) return
+
+  Modal.confirm({
+    title: '确认删除该对话吗？',
+    content: '删除后无法恢复',
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => deleteChat(chatId)
+  })
 }
 
 // 监听线程变化，刷新附件列表
@@ -1409,19 +1474,56 @@ onUnmounted(() => {
     border-color: #1890ff;
   }
 
+  .conversation-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
   .conversation-title {
     font-size: 14px;
     color: #262626;
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
-    .new-dialog-plus {
-      color: #8c8c8c;
-      flex-shrink: 0;
-      opacity: 0.6;
+  .conversation-more-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #8c8c8c;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s;
+
+    &:hover {
+      background: #f0f0f0;
+      color: #595959;
     }
   }
+
+  &:hover .conversation-more-btn,
+  &.active .conversation-more-btn {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.menu-item-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .messages-container {
