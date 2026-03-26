@@ -41,7 +41,11 @@ async def get_agent_history_view(
 
         extra_metadata = msg.extra_metadata or {}
         additional_kwargs = extra_metadata.get("additional_kwargs")
+        if not isinstance(additional_kwargs, dict):
+            additional_kwargs = {}
         provider_specific_fields = extra_metadata.get("provider_specific_fields")
+        if not isinstance(provider_specific_fields, dict):
+            provider_specific_fields = {}
         reasoning_content = (
             extra_metadata.get("reasoning_content")
             or extra_metadata.get("reasoning")
@@ -52,6 +56,8 @@ async def get_agent_history_view(
             or ((additional_kwargs or {}).get("provider_specific_fields") or {}).get("reasoning_content")
             or ((additional_kwargs or {}).get("provider_specific_fields") or {}).get("reasoning")
         )
+        if reasoning_content:
+            additional_kwargs["reasoning_content"] = additional_kwargs.get("reasoning_content") or reasoning_content
 
         msg_dict = {
             "id": msg.id,
@@ -61,8 +67,8 @@ async def get_agent_history_view(
             "error_type": extra_metadata.get("error_type"),
             "error_message": extra_metadata.get("error_message"),
             "extra_metadata": extra_metadata,
-            "additional_kwargs": additional_kwargs or {},
-            "provider_specific_fields": provider_specific_fields or {},
+            "additional_kwargs": additional_kwargs,
+            "provider_specific_fields": provider_specific_fields,
             "reasoning_content": reasoning_content or "",
             "message_type": msg.message_type,
             "image_content": msg.image_content,
