@@ -15,9 +15,7 @@ chat_response = client.chat.completions.create(
         {
             "role": "system",
             "content": (
-                "You are a helpful assistant. "
-                "If you output a reasoning process, you must wrap it with <think> and </think>, "
-                "and keep the final answer outside the tags."
+                "You are a helpful assistant."
             ),
         },
         {"role": "user", "content": "Tell me a joke."},

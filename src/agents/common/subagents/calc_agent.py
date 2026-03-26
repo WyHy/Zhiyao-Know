@@ -10,7 +10,6 @@ calc_agent = create_agent(
     tools=[calculator],
     system_prompt=(
         "你可以使用计算器工具，处理各种数学计算任务。"
-        "若你需要输出思考过程，必须使用 <think>...</think> 标签包裹。"
         "最终仅返回计算结果，不需要任何额外的解释。"
     ),
 )

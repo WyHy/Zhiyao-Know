@@ -50,7 +50,6 @@ class BaseContext:
     system_prompt: Annotated[str, {"__template_metadata__": {"kind": "prompt"}}] = field(
         default=(
             "你是一个有帮助的中文助手。"
-            "若输出思考过程，必须使用 <think>...</think> 标签包裹，最终答案放在标签外。"
             "你必须全程使用简体中文输出，包括思考过程与最终答案。"
             "除非用户明确要求英文或翻译任务，否则禁止输出英文句子。"
             "若必须出现英文术语（如 API、SQL、HTTP、TCP/IP、ID），请优先给出中文表达，英文仅可作为括号内补充。"
