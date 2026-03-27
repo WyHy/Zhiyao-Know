@@ -338,7 +338,7 @@ class HuizhouImporter:
                 json={
                     "name": name,
                     "parent_id": parent_id,
-                    "description": f"惠州电力局 - {name}"
+                    "description": f"{name}"
                 }
             )
             
@@ -411,7 +411,7 @@ class HuizhouImporter:
                 headers=self.get_headers(),
                 json={
                     "database_name": name,
-                    "description": f"惠州电力局 - {full_path}",
+                    "description": f"{full_path}",
                     "embed_model_name": embed_model_name,
                     "kb_type": "milvus",
                     "additional_params": {},
