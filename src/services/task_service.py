@@ -1,4 +1,5 @@
 import asyncio
+import os
 import uuid
 from collections import Counter
 from collections.abc import Awaitable, Callable
@@ -12,6 +13,14 @@ from src.utils.logging_config import logger
 
 TaskCoroutine = Callable[["TaskContext"], Awaitable[Any]]
 TERMINAL_STATUSES = {"success", "failed", "cancelled"}
+
+
+def _resolve_task_worker_count(default: int = 2) -> int:
+    raw = os.getenv("YUXI_TASK_WORKER_COUNT", str(default))
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        return default
 
 
 def _iso_to_utc_naive(value: str | None) -> datetime | None:
@@ -142,22 +151,21 @@ class Tasker:
         return task
 
     async def list_tasks(self, status: str | None = None, limit: int = 100) -> dict[str, Any]:
-        async with self._lock:
-            all_tasks = list(self._tasks.values())
+        records = await self._repo.list_all()
+        all_tasks = [Task.from_dict(record.to_dict()) for record in records]
 
         status_counter = Counter(task.status for task in all_tasks)
         type_counter = Counter(task.type for task in all_tasks)
-        all_tasks.sort(key=lambda item: item.created_at or utc_isoformat(), reverse=True)
 
-        tasks = all_tasks
+        filtered_tasks = all_tasks
         if status:
-            tasks = [task for task in tasks if task.status == status]
+            filtered_tasks = [task for task in all_tasks if task.status == status]
 
-        limited_tasks = tasks[: max(limit, 0)]
+        limited_tasks = filtered_tasks[: max(limit, 0)]
 
         summary: dict[str, Any] = {
             "total": len(all_tasks),
-            "filtered_total": len(tasks),
+            "filtered_total": len(filtered_tasks),
             "status_counts": dict(status_counter),
             "type_counts": dict(type_counter),
         }
@@ -168,9 +176,8 @@ class Tasker:
         }
 
     async def get_task(self, task_id: str) -> dict[str, Any] | None:
-        async with self._lock:
-            task = self._tasks.get(task_id)
-        return task.to_dict() if task else None
+        record = await self._repo.get_by_id(task_id)
+        return record.to_dict() if record else None
 
     async def cancel_task(self, task_id: str) -> bool:
         async with self._lock:
@@ -332,7 +339,7 @@ class Tasker:
         await self._repo.upsert(task.id, data)
 
 
-tasker = Tasker()
+tasker = Tasker(worker_count=_resolve_task_worker_count())
 
 
 __all__ = ["tasker", "TaskContext", "Tasker"]

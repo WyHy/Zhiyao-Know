@@ -29,6 +29,17 @@ KB_VISIBILITY_AGENT_ONLY = "agent_only"
 KB_VISIBILITY_CHOICES = {KB_VISIBILITY_PUBLIC, KB_VISIBILITY_PRIVATE, KB_VISIBILITY_AGENT_ONLY}
 
 
+def _resolve_index_concurrency(params: dict | None = None, default: int = 4) -> int:
+    if params and "index_concurrency" in params:
+        raw = params.get("index_concurrency")
+    else:
+        raw = os.getenv("YUXI_INDEX_CONCURRENCY", str(default))
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        return default
+
+
 async def _deny_agent_only_kb_from_web(db_id: str) -> None:
     kb_row = await KnowledgeBaseRepository().get_by_id(db_id)
     if kb_row and (kb_row.visibility or KB_VISIBILITY_PUBLIC) == KB_VISIBILITY_AGENT_ONLY:
@@ -355,6 +366,7 @@ async def add_documents(
 
         total = len(items)
         processed_items = []
+        parsed_success_files: list[tuple[str, str]] = []
 
         # 存储第一阶段成功添加的文件记录 {item: (file_id, file_meta)}
         added_files = {}
@@ -407,6 +419,8 @@ async def add_documents(
                     file_meta = await knowledge_base.parse_file(db_id, file_id, operator_id=current_user.user_id)
                     processed_items.append(file_meta)
                     parse_success_count += 1
+                    if file_meta.get("status") == "parsed":
+                        parsed_success_files.append((item, file_id))
                 except Exception as parse_error:
                     logger.error(f"解析文件失败 {item} (file_id={file_id}): {parse_error}")
                     error_type = "timeout" if isinstance(parse_error, TimeoutError) else "parse_failed"
@@ -423,34 +437,43 @@ async def add_documents(
             # ========== 第三阶段：自动入库 ==========
             if auto_index:
                 await context.set_message("第三阶段：自动入库")
-                parsed_files = [(item, data) for item, data in added_files.items() if data[1].get("status") == "parsed"]
+                parsed_files = parsed_success_files
                 total_parsed = len(parsed_files)
+                if total_parsed > 0:
+                    index_concurrency = _resolve_index_concurrency(params)
+                    await context.set_message(f"第三阶段：自动入库（并发 {index_concurrency}）")
+                    semaphore = asyncio.Semaphore(index_concurrency)
+                    progress_lock = asyncio.Lock()
+                    done_count = 0
 
-                for idx, (item, (file_id, file_meta)) in enumerate(parsed_files, 1):
-                    await context.raise_if_cancelled()
+                    async def _index_one(item: str, file_id: str) -> dict:
+                        nonlocal done_count
+                        async with semaphore:
+                            await context.raise_if_cancelled()
+                            try:
+                                await knowledge_base.update_file_params(
+                                    db_id, file_id, indexing_params, operator_id=current_user.user_id
+                                )
+                                return await knowledge_base.index_file(db_id, file_id, operator_id=current_user.user_id)
+                            except Exception as index_error:
+                                logger.error(f"自动入库失败 {item} (file_id={file_id}): {index_error}")
+                                return {
+                                    "item": item,
+                                    "file_id": file_id,
+                                    "status": "failed",
+                                    "error": f"入库失败: {str(index_error)}",
+                                    "error_type": "index_failed",
+                                }
+                            finally:
+                                async with progress_lock:
+                                    done_count += 1
+                                    progress = 55.0 + (done_count / total_parsed) * 40.0
+                                    await context.set_progress(progress, f"[3/3] 入库文件 {done_count}/{total_parsed}")
 
-                    # 第三阶段进度：55%~95% 或 60%~95%
-                    progress = 55.0 + (idx / total_parsed) * 40.0
-                    await context.set_progress(progress, f"[3/3] 入库文件 {idx}/{total_parsed}")
-
-                    try:
-                        # 1. 更新入库参数
-                        await knowledge_base.update_file_params(
-                            db_id, file_id, indexing_params, operator_id=current_user.user_id
-                        )
-                        # 2. 执行入库
-                        result = await knowledge_base.index_file(db_id, file_id, operator_id=current_user.user_id)
-                        processed_items.append(result)
-                    except Exception as index_error:
-                        logger.error(f"自动入库失败 {item} (file_id={file_id}): {index_error}")
-                        processed_items.append(
-                            {
-                                "item": item,
-                                "status": "failed",
-                                "error": f"入库失败: {str(index_error)}",
-                                "error_type": "index_failed",
-                            }
-                        )
+                    index_results = await asyncio.gather(
+                        *[_index_one(item, file_id) for item, file_id in parsed_files]
+                    )
+                    processed_items.extend(index_results)
 
         except asyncio.CancelledError:
             await context.set_progress(100.0, "任务已取消")
@@ -513,7 +536,6 @@ async def parse_documents(db_id: str, file_ids: list[str] = Body(...), current_u
         await context.set_message("任务初始化")
         await context.set_progress(5.0, "准备解析文档")
 
-        total = len(file_ids)
         processed_items = []
 
         try:
@@ -570,7 +592,6 @@ async def index_documents(
         await context.set_message("任务初始化")
         await context.set_progress(5.0, "准备入库文档")
 
-        total = len(file_ids)
         processed_items = []
 
         # Track files that failed param update
@@ -589,23 +610,33 @@ async def index_documents(
                             {"file_id": file_id, "status": "failed", "error": f"参数更新失败: {str(e)}"}
                         )
 
-            for idx, file_id in enumerate(file_ids, 1):
-                await context.raise_if_cancelled()
+            candidate_file_ids = [file_id for file_id in file_ids if file_id not in param_update_failed]
+            total_candidates = len(candidate_file_ids)
 
-                # Skip files that failed param update
-                if file_id in param_update_failed:
-                    logger.debug(f"Skipping {file_id} due to param update failure")
-                    continue
+            if total_candidates > 0:
+                index_concurrency = _resolve_index_concurrency(params)
+                await context.set_message(f"并发入库中（并发 {index_concurrency}）")
+                semaphore = asyncio.Semaphore(index_concurrency)
+                progress_lock = asyncio.Lock()
+                done_count = 0
 
-                progress = 5.0 + (idx / total) * 90.0
-                await context.set_progress(progress, f"正在入库第 {idx}/{total} 个文档")
+                async def _index_one(file_id: str) -> dict:
+                    nonlocal done_count
+                    async with semaphore:
+                        await context.raise_if_cancelled()
+                        try:
+                            return await knowledge_base.index_file(db_id, file_id, operator_id=operator_id)
+                        except Exception as e:
+                            logger.error(f"Index failed for {file_id}: {e}")
+                            return {"file_id": file_id, "status": "failed", "error": str(e)}
+                        finally:
+                            async with progress_lock:
+                                done_count += 1
+                                progress = 5.0 + (done_count / total_candidates) * 90.0
+                                await context.set_progress(progress, f"正在入库第 {done_count}/{total_candidates} 个文档")
 
-                try:
-                    result = await knowledge_base.index_file(db_id, file_id, operator_id=operator_id)
-                    processed_items.append(result)
-                except Exception as e:
-                    logger.error(f"Index failed for {file_id}: {e}")
-                    processed_items.append({"file_id": file_id, "status": "failed", "error": str(e)})
+                index_results = await asyncio.gather(*[_index_one(file_id) for file_id in candidate_file_ids])
+                processed_items.extend(index_results)
 
         except Exception as e:
             logger.exception(f"Index task failed: {e}")

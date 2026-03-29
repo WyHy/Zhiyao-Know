@@ -157,3 +157,70 @@ docker compose restart api
 - MinerU Official 需要设置 `MINERU_API_KEY` 环境变量
 - DeepSeek OCR 需要设置 `SILICONFLOW_API_KEY` 环境变量
 - RapidOCR 适合 CPU 环境和基础识别需求
+
+## 入库并发参数（新增）
+
+为提升“批量提交文件”时的入库速度，系统支持在入库阶段设置并发度。
+
+### 1) 单次请求参数：`index_concurrency`
+
+- 作用范围：当前一次入库任务
+- 适用接口：
+  - `POST /api/knowledge/databases/{db_id}/documents`（开启 `auto_index=true` 时）
+  - `POST /api/knowledge/databases/{db_id}/documents/index`
+- 类型：整数，最小值 1
+
+示例（上传后自动解析+自动入库）：
+
+```json
+{
+  "items": ["http://localhost:9000/ref-kb-xxx/a.pdf"],
+  "params": {
+    "content_type": "file",
+    "auto_index": true,
+    "chunk_size": 1000,
+    "chunk_overlap": 200,
+    "qa_separator": "",
+    "index_concurrency": 4
+  }
+}
+```
+
+示例（手动批量入库）：
+
+```json
+{
+  "file_ids": ["file_a", "file_b", "file_c"],
+  "params": {
+    "chunk_size": 1000,
+    "chunk_overlap": 200,
+    "qa_separator": "",
+    "index_concurrency": 4
+  }
+}
+```
+
+### 2) 全局默认参数：`YUXI_INDEX_CONCURRENCY`
+
+- 作用范围：未传 `index_concurrency` 时的默认并发度
+- 默认值：`4`
+
+```bash
+YUXI_INDEX_CONCURRENCY=4
+```
+
+### 3) 任务调度并发（服务级）
+
+- `YUXI_API_WORKERS`：API 进程数（Uvicorn workers，默认 `4`）
+- `YUXI_TASK_WORKER_COUNT`：每个 API 进程内 Tasker worker 数（默认 `8`）
+
+建议先从以下组合开始压测：
+
+- 中等机器：`YUXI_API_WORKERS=2`、`YUXI_TASK_WORKER_COUNT=4`、`index_concurrency=2~4`
+- 高配机器：`YUXI_API_WORKERS=4`、`YUXI_TASK_WORKER_COUNT=8`、`index_concurrency=4~8`
+
+### 4) 使用建议
+
+- 文档较小或大量空文本分块时，并发收益有限。
+- 文档较大且分块较多时，提高 `index_concurrency` 收益更明显。
+- 建议逐步调大并发，观察 CPU、内存、向量库与嵌入服务负载，避免过载。

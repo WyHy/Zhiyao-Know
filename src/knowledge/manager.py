@@ -177,12 +177,18 @@ class KnowledgeBaseManager:
         kb_repo = KnowledgeBaseRepository()
         rows = await kb_repo.get_all()
 
+        kb_types_in_use = {row.kb_type or "lightrag" for row in rows}
+        async with self._metadata_lock:
+            for kb_type in kb_types_in_use:
+                kb_instance = self._get_or_create_kb_instance(kb_type)
+                # 多 worker 下在列表查询前按类型刷新一次，避免每条记录重复刷新
+                await kb_instance._load_metadata()
+
         all_databases = []
         for row in rows:
             kb_instance = self._get_or_create_kb_instance(row.kb_type or "lightrag")
             db_info = kb_instance.get_database_info(row.db_id)
             if db_info is None:
-                await kb_instance._load_metadata()
                 db_info = kb_instance.get_database_info(row.db_id)
             if db_info is None:
                 db_info = {
@@ -506,9 +512,11 @@ class KnowledgeBaseManager:
 
         try:
             kb_instance = await self._get_kb_for_database(db_id)
+            # 多 worker 下详情查询按请求刷新一次，保证 UI 一致性
+            async with self._metadata_lock:
+                await kb_instance._load_metadata()
             db_info = kb_instance.get_database_info(db_id)
             if db_info is None:
-                await kb_instance._load_metadata()
                 db_info = kb_instance.get_database_info(db_id)
             
             # 如果 kb_instance.get_database_info 返回 None，使用默认结构
