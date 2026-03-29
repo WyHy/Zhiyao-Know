@@ -615,3 +615,149 @@ class KBAgentBinding(Base):
             "created_at": format_utc_datetime(self.created_at),
         }
 
+
+class ComplianceRiskLibrary(Base):
+    """合规风险库"""
+
+    __tablename__ = "compliance_risk_library"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(100), nullable=False, unique=True, index=True)
+    title = Column(String(500), nullable=False, index=True)
+    desc = Column(Text, nullable=True)
+    level = Column(String(20), nullable=True, index=True)
+    category = Column(String(100), nullable=True, index=True)
+    department = Column(String(100), nullable=True, index=True)
+    cooperate_department = Column(String(100), nullable=True)
+    owner = Column(String(100), nullable=True)
+    business_lv1 = Column(String(200), nullable=True)
+    business_lv2 = Column(String(200), nullable=True)
+    consequence = Column(Text, nullable=True)
+    bottom_line = Column(String(50), nullable=True)
+    basis = Column(Text, nullable=True)
+    obligation = Column(Text, nullable=True)
+    measures = Column(JSON, nullable=False, default=list)
+    chips = Column(JSON, nullable=False, default=list)
+    remark = Column(Text, nullable=True)
+    source_sheet = Column(String(200), nullable=True)
+    source_file = Column(String(500), nullable=True)
+    created_by = Column(String(64), nullable=True)
+    updated_by = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=utc_now_naive, index=True)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, index=True)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "code": self.code,
+            "title": self.title,
+            "desc": self.desc or "",
+            "level": self.level or "",
+            "category": self.category or "",
+            "department": self.department or "",
+            "cooperate_department": self.cooperate_department or "",
+            "owner": self.owner or "",
+            "business_lv1": self.business_lv1 or "",
+            "business_lv2": self.business_lv2 or "",
+            "consequence": self.consequence or "",
+            "bottom_line": self.bottom_line or "",
+            "basis": self.basis or "",
+            "obligation": self.obligation or "",
+            "measures": self.measures or [],
+            "chips": self.chips or [],
+            "remark": self.remark or "",
+            "source_sheet": self.source_sheet or "",
+            "source_file": self.source_file or "",
+            "created_at": format_utc_datetime(self.created_at),
+            "updated_at": format_utc_datetime(self.updated_at),
+        }
+
+
+class ComplianceProcessChecklist(Base):
+    """流程管控清单"""
+
+    __tablename__ = "compliance_process_checklist"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(100), nullable=False, unique=True, index=True)
+    title = Column(String(500), nullable=False, index=True)
+    department = Column(String(100), nullable=True, index=True)
+    owner = Column(String(100), nullable=True)
+    level1_process = Column(String(200), nullable=True)
+    level2_process = Column(String(200), nullable=True)
+    level3_process = Column(String(200), nullable=True)
+    risk_desc = Column(Text, nullable=True)
+    compliance_points = Column(JSON, nullable=False, default=list)
+    source_basis = Column(Text, nullable=True)
+    risk_points = Column(Text, nullable=True)
+    measures = Column(Text, nullable=True)
+    source_sheet = Column(String(200), nullable=True)
+    source_file = Column(String(500), nullable=True)
+    created_by = Column(String(64), nullable=True)
+    updated_by = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=utc_now_naive, index=True)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, index=True)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "code": self.code,
+            "title": self.title,
+            "department": self.department or "",
+            "owner": self.owner or "",
+            "level1_process": self.level1_process or "",
+            "level2_process": self.level2_process or "",
+            "level3_process": self.level3_process or "",
+            "risk_desc": self.risk_desc or "",
+            "compliance_points": self.compliance_points or [],
+            "source_basis": self.source_basis or "",
+            "risk_points": self.risk_points or "",
+            "measures": self.measures or "",
+            "source_sheet": self.source_sheet or "",
+            "source_file": self.source_file or "",
+            "created_at": format_utc_datetime(self.created_at),
+            "updated_at": format_utc_datetime(self.updated_at),
+        }
+
+
+class CompliancePositionResponsibility(Base):
+    """岗位履责合规义务清单"""
+
+    __tablename__ = "compliance_position_responsibility"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(100), nullable=False, unique=True, index=True)
+    title = Column(String(500), nullable=False, index=True)
+    department = Column(String(100), nullable=True, index=True)
+    compliance_type = Column(String(100), nullable=True, index=True)
+    level = Column(String(100), nullable=True)
+    responsibilities = Column(JSON, nullable=False, default=list)
+    compliance_points = Column(JSON, nullable=False, default=list)
+    bottom_line_penalty = Column(Text, nullable=True)
+    source_basis = Column(Text, nullable=True)
+    related_risks = Column(JSON, nullable=False, default=list)
+    source_sheet = Column(String(200), nullable=True)
+    source_file = Column(String(500), nullable=True)
+    created_by = Column(String(64), nullable=True)
+    updated_by = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=utc_now_naive, index=True)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, index=True)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "code": self.code,
+            "title": self.title,
+            "department": self.department or "",
+            "compliance_type": self.compliance_type or "",
+            "level": self.level or "",
+            "responsibilities": self.responsibilities or [],
+            "compliance_points": self.compliance_points or [],
+            "bottom_line_penalty": self.bottom_line_penalty or "",
+            "source_basis": self.source_basis or "",
+            "related_risks": self.related_risks or [],
+            "source_sheet": self.source_sheet or "",
+            "source_file": self.source_file or "",
+            "created_at": format_utc_datetime(self.created_at),
+            "updated_at": format_utc_datetime(self.updated_at),
+        }

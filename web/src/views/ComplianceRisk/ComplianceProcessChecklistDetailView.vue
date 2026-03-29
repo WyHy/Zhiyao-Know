@@ -4,112 +4,106 @@
       <a-button type="link" class="pd-back" @click="goBack">返回</a-button>
     </div>
 
-    <div class="pd-card">
-      <div class="pd-head">
-        <div class="pd-title-row">
-          <div class="pd-title">{{ record.title }}</div>
-          <a-tag class="pd-dept">{{ record.department }}</a-tag>
+    <a-spin :spinning="loading">
+      <div class="pd-card">
+        <div class="pd-head">
+          <div class="pd-title-row">
+            <div class="pd-title">{{ record.title }}</div>
+            <a-tag class="pd-dept">{{ record.department || '-' }}</a-tag>
+          </div>
+          <div class="pd-code">流程编号：{{ record.code }}</div>
         </div>
-        <div class="pd-code">流程编号：{{ record.code }}</div>
-      </div>
 
-      <div class="pd-sections">
-        <div class="pd-section">
-          <div class="pd-section-title">流程信息</div>
-          <div class="pd-grid">
-            <div class="pd-kv">
-              <div class="k">流程名称</div>
-              <div class="v">{{ record.title }}</div>
-            </div>
-            <div class="pd-kv">
-              <div class="k">负责部门</div>
-              <div class="v">{{ record.department }}</div>
-            </div>
-            <div class="pd-kv">
-              <div class="k">责任部门</div>
-              <div class="v">{{ record.department }}</div>
-            </div>
-            <div class="pd-kv">
-              <div class="k">责任人</div>
-              <div class="v">{{ record.owner }}</div>
+        <div class="pd-sections">
+          <div class="pd-section">
+            <div class="pd-section-title">流程信息</div>
+            <div class="pd-grid">
+              <div class="pd-kv">
+                <div class="k">一级流程</div>
+                <div class="v">{{ record.level1_process || '-' }}</div>
+              </div>
+              <div class="pd-kv">
+                <div class="k">二级流程</div>
+                <div class="v">{{ record.level2_process || '-' }}</div>
+              </div>
+              <div class="pd-kv">
+                <div class="k">三级流程</div>
+                <div class="v">{{ record.level3_process || '-' }}</div>
+              </div>
+              <div class="pd-kv">
+                <div class="k">责任部门</div>
+                <div class="v">{{ record.department || '-' }}</div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="pd-section">
-          <div class="pd-section-title">风险描述</div>
-          <div class="pd-text">{{ record.riskDesc }}</div>
-        </div>
-
-        <div class="pd-section">
-          <div class="pd-section-title">合规要点</div>
-          <div class="pd-text">
-            <ol class="pd-ol">
-              <li v-for="(p, idx) in record.compliancePoints" :key="idx">{{ p }}</li>
-            </ol>
+          <div class="pd-section">
+            <div class="pd-section-title">风险描述</div>
+            <div class="pd-text">{{ record.risk_desc || '-' }}</div>
           </div>
-        </div>
 
-        <div class="pd-section">
-          <div class="pd-section-title">风险管控措施</div>
-          <div class="pd-text">{{ record.measures }}</div>
-        </div>
+          <div class="pd-section">
+            <div class="pd-section-title">合规要点</div>
+            <div class="pd-text">
+              <ol class="pd-ol">
+                <li v-for="(p, idx) in record.compliance_points || []" :key="idx">{{ p }}</li>
+              </ol>
+            </div>
+          </div>
 
-        <div class="pd-section">
-          <div class="pd-section-title">责任部门</div>
-          <div class="pd-grid">
-            <div class="pd-kv">
-              <div class="k">责任部门</div>
-              <div class="v">{{ record.department }}</div>
-            </div>
-            <div class="pd-kv">
-              <div class="k">责任人</div>
-              <div class="v">{{ record.owner }}</div>
-            </div>
+          <div class="pd-section">
+            <div class="pd-section-title">合规风险点</div>
+            <div class="pd-text">{{ record.risk_points || '-' }}</div>
+          </div>
+
+          <div class="pd-section">
+            <div class="pd-section-title">监督评价要点</div>
+            <div class="pd-text">{{ record.measures || '-' }}</div>
+          </div>
+
+          <div class="pd-section">
+            <div class="pd-section-title">合规义务来源</div>
+            <div class="pd-text">{{ record.source_basis || '-' }}</div>
           </div>
         </div>
       </div>
-    </div>
+      <a-empty v-if="!loading && !record.id" description="记录不存在" />
+    </a-spin>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { message } from 'ant-design-vue'
+
+import { complianceApi } from '@/apis/compliance_api'
 
 const route = useRoute()
 const router = useRouter()
 
-const MOCK_MAP = {
-  'LC-001': {
-    code: 'LC-001',
-    title: '招标采购审批流程',
-    department: '物资部',
-    owner: '采购主管',
-    riskDesc: '存在规避招标、指定采购等违规风险，影响采购公正性',
-    compliancePoints: ['采购金额超限触发招标；', '招标文件综合合规审查；', '评标委员会资质/规避组建'],
-    measures: '审查采购项目立项资料→确认招标方式→组织公开招标→评标委员会评审→中标公示→合同签订'
+const loading = ref(false)
+const record = ref({})
+
+const fetchDetail = async () => {
+  const id = Number(route.params.process_id)
+  if (!id) return
+  loading.value = true
+  try {
+    const res = await complianceApi.getProcessChecklistDetail(id)
+    record.value = res.data || {}
+  } catch (error) {
+    message.error(error.message || '获取流程详情失败')
+  } finally {
+    loading.value = false
   }
 }
-
-const record = computed(() => {
-  const id = String(route.params.process_id || '')
-  return (
-    MOCK_MAP[id] || {
-      code: id || 'LC-000',
-      title: '未找到该流程（假数据）',
-      department: '-',
-      owner: '-',
-      riskDesc: '当前流程编号不存在于死数据中，你可以继续补充 MOCK_MAP。',
-      compliancePoints: ['-'],
-      measures: '-'
-    }
-  )
-})
 
 const goBack = () => {
   router.push('/compliance-risk/process-checklist')
 }
+
+onMounted(fetchDetail)
 </script>
 
 <style scoped lang="less">
@@ -206,17 +200,11 @@ const goBack = () => {
   font-size: 13px;
   color: var(--gray-900);
   line-height: 1.65;
+  white-space: pre-wrap;
 }
 
 .pd-ol {
   margin: 0;
   padding-left: 18px;
 }
-
-@media (max-width: 1024px) {
-  .pd-grid {
-    grid-template-columns: 1fr;
-  }
-}
 </style>
-

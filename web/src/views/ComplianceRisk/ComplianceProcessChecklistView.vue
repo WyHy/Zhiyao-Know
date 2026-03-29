@@ -20,118 +20,149 @@
         </a-input>
         <a-button type="primary" @click="handleSearch">搜索</a-button>
         <a-select v-model:value="filters.department" class="pc-select" placeholder="全部部门" allow-clear>
-          <a-select-option value="物资部">物资部</a-select-option>
-          <a-select-option value="建设部">建设部</a-select-option>
-          <a-select-option value="财务部">财务部</a-select-option>
-          <a-select-option value="法务部">法务部</a-select-option>
-          <a-select-option value="营销部">营销部</a-select-option>
+          <a-select-option v-for="dept in departments" :key="dept" :value="dept">{{ dept }}</a-select-option>
         </a-select>
       </div>
 
       <div class="pc-summary">共 {{ filteredList.length }} 条记录</div>
 
-      <div class="pc-list">
-        <div v-for="row in filteredList" :key="row.id" class="pc-item" @click="openDetail(row)">
-          <div class="pc-item-main">
-            <div class="pc-item-code">{{ row.code }}</div>
-            <div class="pc-item-title">{{ row.title }}</div>
-            <div class="pc-item-desc">{{ row.desc }}</div>
-            <div class="pc-item-meta">
-              <a-tag class="pc-chip">{{ row.department }}</a-tag>
-              <span class="pc-split"></span>
-              <span class="pc-owner">负责人：{{ row.owner }}</span>
+      <a-spin :spinning="loading">
+        <a-pagination
+          v-if="filteredList.length > 0"
+          class="pc-pagination"
+          size="small"
+          :current="pagination.current"
+          :page-size="pagination.pageSize"
+          :total="filteredList.length"
+          :show-size-changer="true"
+          :page-size-options="['10', '20', '50', '100']"
+          :show-total="(total) => `共 ${total} 条`"
+          @change="handlePageChange"
+          @showSizeChange="handlePageChange"
+        />
+        <div class="pc-list-scroll">
+          <div class="pc-list">
+            <div v-for="row in pagedList" :key="row.id" class="pc-item" @click="openDetail(row)">
+              <div class="pc-item-main">
+                <div class="pc-item-code">{{ row.code }}</div>
+                <div class="pc-item-title">{{ row.title }}</div>
+                <div class="pc-item-desc">{{ row.risk_desc }}</div>
+                <div class="pc-item-meta">
+                  <a-tag class="pc-chip">{{ row.department || '-' }}</a-tag>
+                  <span class="pc-split"></span>
+                  <span class="pc-owner">负责人：{{ row.owner || '-' }}</span>
+                </div>
+              </div>
+              <ChevronRight class="pc-arrow" size="18" />
             </div>
+            <a-empty v-if="!loading && filteredList.length === 0" description="暂无数据" />
           </div>
-          <ChevronRight class="pc-arrow" size="18" />
         </div>
-      </div>
+      </a-spin>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { message } from 'ant-design-vue'
 import { Search, ChevronRight } from 'lucide-vue-next'
 
+import { complianceApi } from '@/apis/compliance_api'
+
 const router = useRouter()
+const route = useRoute()
+const loading = ref(false)
+const list = ref([])
+const pagination = ref({
+  current: 1,
+  pageSize: 20
+})
 
 const filters = ref({
   keyword: '',
   department: undefined
 })
 
-const list = ref([
-  {
-    id: 'LC-001',
-    code: 'LC-001',
-    title: '招标采购审批流程',
-    desc: '存在规避招标、指定采购等违规风险，影响采购公正性',
-    department: '物资部',
-    owner: '采购主管',
-    compliancePoints: ['采购金额超限触发招标；', '招标文件综合合规审查；', '评标委员会资质/规避组建']
-  },
-  {
-    id: 'LC-002',
-    code: 'LC-002',
-    title: '工程项目合规审查流程',
-    desc: '工程建设存在违规分包、转包，涵盖杜绝廉洁合规风险',
-    department: '建设部',
-    owner: '工程经理',
-    compliancePoints: ['合同文本审查；', '分包资质审核；', '关键节点留痕与复核']
-  },
-  {
-    id: 'LC-003',
-    code: 'LC-003',
-    title: '财务报销审批流程',
-    desc: '报销真实性不合规，超标准报销等财务违规风险',
-    department: '财务部',
-    owner: '财务主管',
-    compliancePoints: ['票据合规性校验；', '预算控制；', '异常报销抽查']
-  },
-  {
-    id: 'LC-005',
-    code: 'LC-005',
-    title: '合同签订审查流程',
-    desc: '合同条款不合规、权利义务失衡等法律合规风险',
-    department: '法务部',
-    owner: '法务主管',
-    compliancePoints: ['合同主体与授权核验；', '条款风险点审查；', '用印/归档闭环']
-  },
-  {
-    id: 'LC-006',
-    code: 'LC-006',
-    title: '电费核算执行流程',
-    desc: '电费计算错误、违规减免电费等营销合规风险',
-    department: '营销部',
-    owner: '营销主管',
-    compliancePoints: ['计量数据核对；', '异常波动复核；', '减免审批留痕']
-  }
-])
+const departments = computed(() => {
+  return [...new Set((list.value || []).map((item) => item.department).filter(Boolean))]
+})
 
 const filteredList = computed(() => {
   const kw = (filters.value.keyword || '').trim()
-  return list.value.filter((r) => {
+  return (list.value || []).filter((r) => {
     const hitKw =
       !kw ||
-      r.title.includes(kw) ||
-      r.desc.includes(kw) ||
-      r.compliancePoints.some((p) => p.includes(kw)) ||
-      r.department.includes(kw) ||
-      r.owner.includes(kw) ||
-      r.code.includes(kw)
+      (r.title || '').includes(kw) ||
+      (r.risk_desc || '').includes(kw) ||
+      (r.compliance_points || []).some((p) => p.includes(kw)) ||
+      (r.department || '').includes(kw) ||
+      (r.owner || '').includes(kw) ||
+      (r.code || '').includes(kw)
     const hitDept = !filters.value.department || r.department === filters.value.department
     return hitKw && hitDept
   })
 })
 
+const pagedList = computed(() => {
+  const start = (pagination.value.current - 1) * pagination.value.pageSize
+  const end = start + pagination.value.pageSize
+  return filteredList.value.slice(start, end)
+})
+
+const fetchList = async () => {
+  loading.value = true
+  try {
+    const res = await complianceApi.getProcessChecklist()
+    list.value = res.data || []
+  } catch (error) {
+    message.error(error.message || '获取流程清单失败')
+  } finally {
+    loading.value = false
+  }
+}
+
 const handleSearch = () => {
-  // 假数据，仅触发过滤
+  pagination.value.current = 1
+}
+
+const handlePageChange = (page, pageSize) => {
+  pagination.value.current = page
+  pagination.value.pageSize = pageSize
 }
 
 const openDetail = (row) => {
   router.push(`/compliance-risk/process-checklist/${row.id}`)
 }
+
+onMounted(fetchList)
+
+watch(
+  () => route.query.keyword,
+  (value) => {
+    filters.value.keyword = typeof value === 'string' ? value : ''
+    pagination.value.current = 1
+  },
+  { immediate: true }
+)
+
+watch(
+  () => filters.value.department,
+  () => {
+    pagination.value.current = 1
+  }
+)
+
+watch(
+  () => filteredList.value.length,
+  (total) => {
+    const maxPage = Math.max(1, Math.ceil(total / pagination.value.pageSize))
+    if (pagination.value.current > maxPage) {
+      pagination.value.current = maxPage
+    }
+  }
+)
 </script>
 
 <style scoped lang="less">
@@ -144,6 +175,9 @@ const openDetail = (row) => {
   border: 1px solid var(--gray-200);
   border-radius: 12px;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 72px);
 }
 
 .pc-head {
@@ -179,7 +213,7 @@ const openDetail = (row) => {
 }
 
 .pc-select {
-  width: 130px;
+  width: 140px;
 }
 
 .pc-summary {
@@ -191,7 +225,33 @@ const openDetail = (row) => {
 }
 
 .pc-list {
+  margin-top: 0;
+}
+
+.pc-pagination {
   margin-top: 10px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pc-list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
+}
+
+.pc-card :deep(.ant-spin-nested-loading) {
+  flex: 1;
+  min-height: 0;
+}
+
+.pc-card :deep(.ant-spin-container) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .pc-item {
@@ -259,5 +319,18 @@ const openDetail = (row) => {
   flex: 0 0 auto;
   margin-top: 4px;
 }
-</style>
 
+@media (max-width: 1024px) {
+  .pc-card {
+    height: auto;
+  }
+  .pc-search {
+    flex-basis: 100%;
+  }
+  .pc-list-scroll {
+    flex: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+}
+</style>

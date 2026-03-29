@@ -5,9 +5,14 @@
       <div class="hero-subtitle">一库两清单 · 统一浏览 · 快速查询</div>
 
       <div class="hero-search">
+        <a-select v-model:value="searchTarget" class="hero-target-select">
+          <a-select-option value="risk-library">风险库</a-select-option>
+          <a-select-option value="process-checklist">流程清单</a-select-option>
+          <a-select-option value="position-responsibility">岗位清单</a-select-option>
+        </a-select>
         <a-input
           v-model:value="keyword"
-          placeholder="搜索风险、流程、岗位…"
+          :placeholder="searchPlaceholder"
           size="large"
           class="hero-search-input"
           allow-clear
@@ -15,6 +20,7 @@
         />
         <a-button type="primary" size="large" class="hero-search-btn" @click="handleSearch">搜索</a-button>
       </div>
+      <div class="hero-search-hint">搜索后将跳转到对应子页面并自动带入关键词筛选</div>
     </div>
 
     <div class="section">
@@ -38,114 +44,135 @@
 
     <div class="section">
       <div class="section-title">最近更新</div>
-      <div class="recent-list">
-        <div v-for="row in recentUpdates" :key="row.id" class="recent-row">
-          <div class="recent-left">
-            <a-tag :color="row.typeColor" class="recent-type">{{ row.type }}</a-tag>
-            <div class="recent-content">
-              <div class="recent-title">{{ row.title }}</div>
-              <div class="recent-sub">
-                <span class="recent-role">{{ row.role }}</span>
-                <span class="dot">·</span>
-                <span class="recent-dept">{{ row.department }}</span>
+      <a-spin :spinning="loading">
+        <div class="recent-list">
+          <div v-for="row in recentUpdates" :key="row.id" class="recent-row">
+            <div class="recent-left">
+              <a-tag :color="row.typeColor" class="recent-type">{{ row.type }}</a-tag>
+              <div class="recent-content">
+                <div class="recent-title">{{ row.title }}</div>
+                <div class="recent-sub">
+                  <span class="recent-role">{{ row.role || '-' }}</span>
+                  <span class="dot">·</span>
+                  <span class="recent-dept">{{ row.department || '-' }}</span>
+                </div>
               </div>
             </div>
+            <div class="recent-time">{{ formatTime(row.updated_at) }}</div>
           </div>
-          <div class="recent-time">{{ row.timeText }}</div>
+          <a-empty v-if="!loading && recentUpdates.length === 0" description="暂无更新" />
         </div>
-      </div>
+      </a-spin>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 
+import { complianceApi } from '@/apis/compliance_api'
+
+const router = useRouter()
+const loading = ref(false)
 const keyword = ref('')
+const searchTarget = ref('risk-library')
+const summary = ref({
+  counts: {
+    risk_library: 0,
+    process_checklist: 0,
+    position_responsibility: 0
+  },
+  recent_updates: []
+})
 
-const quickEntries = ref([
-  {
-    key: 'risk-library',
-    name: '合规风险库',
-    desc: '风险识别与管控清单',
-    count: 8,
-    tone: 'red',
-    iconText: '风'
-  },
-  {
-    key: 'process-checklist',
-    name: '流程管控清单',
-    desc: '业务流程与准入管控',
-    count: 6,
-    tone: 'purple',
-    iconText: '流'
-  },
-  {
-    key: 'position-checklist',
-    name: '岗位职责清单',
-    desc: '岗位合规职责体系',
-    count: 8,
-    tone: 'green',
-    iconText: '岗'
+const searchPlaceholder = computed(() => {
+  const map = {
+    'risk-library': '搜索风险描述、业务类型…',
+    'process-checklist': '搜索流程名称、合规要点…',
+    'position-responsibility': '搜索岗位名称、职责…'
   }
-])
+  return map[searchTarget.value] || '请输入关键词'
+})
 
-const recentUpdates = ref([
-  {
-    id: 'u1',
-    type: '岗位清单',
-    typeColor: 'green',
-    title: '合规管理专员',
-    role: '合规管理部',
-    department: '合规管理部',
-    timeText: '大约 1 小时前'
-  },
-  {
-    id: 'u2',
-    type: '岗位清单',
-    typeColor: 'green',
-    title: '采购主管',
-    role: '物资部',
-    department: '物资部',
-    timeText: '大约 1 小时前'
-  },
-  {
-    id: 'u3',
-    type: '岗位清单',
-    typeColor: 'green',
-    title: '财务审核员',
-    role: '财务部',
-    department: '财务部',
-    timeText: '大约 1 小时前'
-  },
-  {
-    id: 'u4',
-    type: '流程清单',
-    typeColor: 'purple',
-    title: '招标采购审批流程',
-    role: '物资部',
-    department: '物资部',
-    timeText: '大约 1 小时前'
-  },
-  {
-    id: 'u5',
-    type: '流程清单',
-    typeColor: 'purple',
-    title: '合同签订审查流程',
-    role: '法务部',
-    department: '法务部',
-    timeText: '大约 1 小时前'
+const quickEntries = computed(() => {
+  return [
+    {
+      key: 'risk-library',
+      name: '合规风险库',
+      desc: '风险识别与管控清单',
+      count: summary.value.counts.risk_library || 0,
+      tone: 'red',
+      iconText: '风'
+    },
+    {
+      key: 'process-checklist',
+      name: '流程管控清单',
+      desc: '业务流程与准入管控',
+      count: summary.value.counts.process_checklist || 0,
+      tone: 'purple',
+      iconText: '流'
+    },
+    {
+      key: 'position-responsibility',
+      name: '岗位职责清单',
+      desc: '岗位合规职责体系',
+      count: summary.value.counts.position_responsibility || 0,
+      tone: 'green',
+      iconText: '岗'
+    }
+  ]
+})
+
+const recentUpdates = computed(() => {
+  return (summary.value.recent_updates || []).map((item) => ({
+    ...item,
+    typeColor: item.type === '风险库' ? 'red' : item.type === '流程清单' ? 'purple' : 'green'
+  }))
+})
+
+const fetchSummary = async () => {
+  loading.value = true
+  try {
+    const res = await complianceApi.getSummary()
+    summary.value = res.data || summary.value
+  } catch (error) {
+    message.error(error.message || '获取统计信息失败')
+  } finally {
+    loading.value = false
   }
-])
+}
 
 const handleSearch = () => {
-  message.info(`搜索：${keyword.value || '（空）'}（假数据）`)
+  const kw = (keyword.value || '').trim()
+  if (!kw) {
+    message.info('请输入关键词')
+    return
+  }
+  router.push(`/compliance-risk/${searchTarget.value}?keyword=${encodeURIComponent(kw)}`)
 }
 
 const handleQuickOpen = (item) => {
-  message.info(`进入：${item.name}（假数据）`)
+  const map = {
+    'risk-library': '/compliance-risk/risk-library',
+    'process-checklist': '/compliance-risk/process-checklist',
+    'position-responsibility': '/compliance-risk/position-responsibility'
+  }
+  router.push(map[item.key])
 }
+
+const formatTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(
+    2,
+    '0'
+  )} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+onMounted(fetchSummary)
 </script>
 
 <style lang="less" scoped>
@@ -180,6 +207,13 @@ const handleQuickOpen = (item) => {
   align-items: center;
 }
 
+.hero-target-select {
+  width: 140px;
+  :deep(.ant-select-selector) {
+    border-radius: 10px;
+  }
+}
+
 .hero-search-input {
   flex: 1;
   min-width: 200px;
@@ -191,6 +225,12 @@ const handleQuickOpen = (item) => {
 .hero-search-btn {
   border-radius: 10px;
   padding: 0 22px;
+}
+
+.hero-search-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .section {
@@ -318,7 +358,7 @@ const handleQuickOpen = (item) => {
 .recent-left {
   display: flex;
   gap: 10px;
-  align-items: center;
+  align-items: flex-start;
   min-width: 0;
 }
 
@@ -330,39 +370,21 @@ const handleQuickOpen = (item) => {
   font-size: 13px;
   font-weight: 600;
   color: var(--gray-1000);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 520px;
 }
 
 .recent-sub {
   margin-top: 4px;
   font-size: 12px;
   color: var(--gray-600);
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .dot {
-  color: var(--gray-400);
+  margin: 0 6px;
 }
 
 .recent-time {
-  flex: 0 0 auto;
   font-size: 12px;
   color: var(--gray-500);
-  margin-left: 10px;
-}
-
-@media (max-width: 1024px) {
-  .quick-grid {
-    grid-template-columns: 1fr;
-  }
-  .recent-title {
-    max-width: 320px;
-  }
+  flex: 0 0 auto;
 }
 </style>
-

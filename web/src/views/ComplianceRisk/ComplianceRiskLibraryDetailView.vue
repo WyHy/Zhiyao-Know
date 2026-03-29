@@ -4,163 +4,159 @@
       <a-button type="link" class="rd-back" @click="goBack">返回</a-button>
     </div>
 
-    <div class="rd-card">
-      <div class="rd-head">
-        <div class="rd-title-row">
-          <div class="rd-title">{{ record.title }}</div>
-          <a-tag :color="record.levelColor">{{ record.level }}</a-tag>
-        </div>
-        <div class="rd-code">风险编号：{{ record.code }}</div>
-      </div>
-
-      <div class="rd-sections">
-        <div class="rd-section">
-          <div class="rd-section-title">业务信息</div>
-          <div class="rd-grid">
-            <div class="rd-kv">
-              <div class="k">业务类型</div>
-              <div class="v">{{ record.bizType }}</div>
-            </div>
-            <div class="rd-kv">
-              <div class="k">业务活动</div>
-              <div class="v">{{ record.bizActivity }}</div>
-            </div>
-            <div class="rd-kv">
-              <div class="k">合规类型</div>
-              <div class="v">{{ record.category }}</div>
-            </div>
-            <div class="rd-kv">
-              <div class="k">发生概率</div>
-              <div class="v">{{ record.probability }}</div>
-            </div>
+    <a-spin :spinning="loading">
+      <div class="rd-card">
+        <div class="rd-head">
+          <div class="rd-title-row">
+            <div class="rd-title">{{ record.title }}</div>
+            <a-tag :color="levelColor">{{ record.level || '未分级' }}</a-tag>
           </div>
+          <div class="rd-code">风险编号：{{ record.code }}</div>
         </div>
 
-        <div class="rd-section">
-          <div class="rd-section-title">风险信息</div>
-          <div class="rd-grid">
-            <div class="rd-kv">
-              <div class="k">风险等级</div>
-              <div class="v">
-                <a-tag :color="record.levelColor">{{ record.level }}</a-tag>
+        <div class="rd-sections">
+          <div class="rd-section">
+            <div class="rd-section-title">业务信息</div>
+            <div class="rd-grid">
+              <div class="rd-kv">
+                <div class="k">一级业务</div>
+                <div class="v">{{ record.business_lv1 || '-' }}</div>
+              </div>
+              <div class="rd-kv">
+                <div class="k">二级业务</div>
+                <div class="v">{{ record.business_lv2 || '-' }}</div>
+              </div>
+              <div class="rd-kv">
+                <div class="k">合规类型</div>
+                <div class="v">{{ record.category || '-' }}</div>
+              </div>
+              <div class="rd-kv">
+                <div class="k">底线</div>
+                <div class="v">{{ record.bottom_line || '-' }}</div>
               </div>
             </div>
-            <div class="rd-kv span-2">
-              <div class="k">风险描述</div>
-              <div class="v">{{ record.desc }}</div>
-            </div>
           </div>
-        </div>
 
-        <div class="rd-section">
-          <div class="rd-section-title">合规依据</div>
-          <div class="rd-text">{{ record.basis }}</div>
-        </div>
-
-        <div class="rd-section">
-          <div class="rd-section-title">管控措施</div>
-          <div class="rd-text">
-            <ol class="rd-ol">
-              <li v-for="(m, idx) in record.measures" :key="idx">{{ m }}</li>
-            </ol>
-          </div>
-        </div>
-
-        <div class="rd-section">
-          <div class="rd-section-title">责任部门</div>
-          <div class="rd-grid">
-            <div class="rd-kv">
-              <div class="k">责任部门</div>
-              <div class="v">{{ record.department }}</div>
-            </div>
-            <div class="rd-kv">
-              <div class="k">责任人</div>
-              <div class="v">{{ record.owner }}</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="rd-section">
-          <div class="rd-section-title">管理信息</div>
-          <div class="rd-grid">
-            <div class="rd-kv">
-              <div class="k">风险编号</div>
-              <div class="v">{{ record.code }}</div>
-            </div>
-            <div class="rd-kv">
-              <div class="k">记录状态</div>
-              <div class="v">
-                <a-tag color="green">有效</a-tag>
+          <div class="rd-section">
+            <div class="rd-section-title">风险信息</div>
+            <div class="rd-grid">
+              <div class="rd-kv">
+                <div class="k">风险等级</div>
+                <div class="v">
+                  <a-tag :color="levelColor">{{ record.level || '未分级' }}</a-tag>
+                </div>
+              </div>
+              <div class="rd-kv span-2">
+                <div class="k">风险描述</div>
+                <div class="v">{{ record.desc || '-' }}</div>
+              </div>
+              <div class="rd-kv span-2">
+                <div class="k">责任或后果</div>
+                <div class="v">{{ record.consequence || '-' }}</div>
               </div>
             </div>
-            <div class="rd-kv">
-              <div class="k">录入时间</div>
-              <div class="v">{{ record.createdAt }}</div>
+          </div>
+
+          <div class="rd-section">
+            <div class="rd-section-title">合规依据</div>
+            <div class="rd-text">{{ record.basis || '-' }}</div>
+          </div>
+
+          <div class="rd-section">
+            <div class="rd-section-title">合规义务</div>
+            <div class="rd-text">{{ record.obligation || '-' }}</div>
+          </div>
+
+          <div class="rd-section">
+            <div class="rd-section-title">管控措施</div>
+            <div class="rd-text">
+              <ol class="rd-ol">
+                <li v-for="(m, idx) in record.measures || []" :key="idx">{{ m }}</li>
+              </ol>
             </div>
-            <div class="rd-kv">
-              <div class="k">最后更新</div>
-              <div class="v">{{ record.updatedAt }}</div>
+          </div>
+
+          <div class="rd-section">
+            <div class="rd-section-title">责任部门</div>
+            <div class="rd-grid">
+              <div class="rd-kv">
+                <div class="k">归口部门</div>
+                <div class="v">{{ record.department || '-' }}</div>
+              </div>
+              <div class="rd-kv">
+                <div class="k">配合部门</div>
+                <div class="v">{{ record.cooperate_department || '-' }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rd-section">
+            <div class="rd-section-title">管理信息</div>
+            <div class="rd-grid">
+              <div class="rd-kv">
+                <div class="k">风险编号</div>
+                <div class="v">{{ record.code }}</div>
+              </div>
+              <div class="rd-kv">
+                <div class="k">录入时间</div>
+                <div class="v">{{ record.created_at || '-' }}</div>
+              </div>
+              <div class="rd-kv">
+                <div class="k">最后更新</div>
+                <div class="v">{{ record.updated_at || '-' }}</div>
+              </div>
+              <div class="rd-kv">
+                <div class="k">备注</div>
+                <div class="v">{{ record.remark || '-' }}</div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+      <a-empty v-if="!loading && !record.id" description="记录不存在" />
+    </a-spin>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { message } from 'ant-design-vue'
+
+import { complianceApi } from '@/apis/compliance_api'
 
 const route = useRoute()
 const router = useRouter()
 
-const MOCK_MAP = {
-  'FX-001': {
-    code: 'FX-001',
-    level: '高风险',
-    levelColor: 'red',
-    category: '法律合规',
-    title: '采购项目立项',
-    desc: '未按规定履行招标程序，存在规避招标、化整为零规避招标等违规行为',
-    bizType: '招标采购',
-    bizActivity: '采购项目立项',
-    probability: '中等',
-    basis: '《招标投标法》及相关规定，第三十条、第四十条等（示例文本）',
-    measures: ['严格执行招标采购管理制度；', '建立招标采购审查机制；', '定期开展招标采购合规培训'],
-    department: '物资部',
-    owner: '采购主管',
-    createdAt: '2026年03月17日 11:46',
-    updatedAt: '2026年03月17日 11:46'
+const loading = ref(false)
+const record = ref({})
+
+const levelColor = computed(() => {
+  if (record.value.level === '高风险') return 'red'
+  if (record.value.level === '中风险') return 'orange'
+  if (record.value.level === '低风险') return 'green'
+  return 'default'
+})
+
+const fetchDetail = async () => {
+  const id = Number(route.params.risk_id)
+  if (!id) return
+  loading.value = true
+  try {
+    const res = await complianceApi.getRiskLibraryDetail(id)
+    record.value = res.data || {}
+  } catch (error) {
+    message.error(error.message || '获取风险详情失败')
+  } finally {
+    loading.value = false
   }
 }
-
-const record = computed(() => {
-  const id = String(route.params.risk_id || '')
-  return (
-    MOCK_MAP[id] || {
-      code: id || 'FX-000',
-      level: '中风险',
-      levelColor: 'orange',
-      category: '合规',
-      title: '未找到该风险（假数据）',
-      desc: '当前风险编号不存在于死数据中，你可以继续补充 MOCK_MAP。',
-      bizType: '-',
-      bizActivity: '-',
-      probability: '-',
-      basis: '-',
-      measures: ['-'],
-      department: '-',
-      owner: '-',
-      createdAt: '-',
-      updatedAt: '-'
-    }
-  )
-})
 
 const goBack = () => {
   router.push('/compliance-risk/risk-library')
 }
+
+onMounted(fetchDetail)
 </script>
 
 <style scoped lang="less">
@@ -254,20 +250,11 @@ const goBack = () => {
   font-size: 13px;
   color: var(--gray-900);
   line-height: 1.65;
+  white-space: pre-wrap;
 }
 
 .rd-ol {
   margin: 0;
   padding-left: 18px;
 }
-
-@media (max-width: 1024px) {
-  .rd-grid {
-    grid-template-columns: 1fr;
-  }
-  .span-2 {
-    grid-column: 1 / 2;
-  }
-}
 </style>
-

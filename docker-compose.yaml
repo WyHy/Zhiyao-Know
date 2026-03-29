@@ -31,6 +31,9 @@ services:
       - YUXI_API_WORKERS=${YUXI_API_WORKERS:-1}
       - YUXI_TASK_WORKER_COUNT=${YUXI_TASK_WORKER_COUNT:-1}
       - YUXI_INDEX_CONCURRENCY=${YUXI_INDEX_CONCURRENCY:-1}
+      - YUXI_PROCESSING_QUEUE_REDIS_URL=${YUXI_PROCESSING_QUEUE_REDIS_URL:-redis://kb-queue-redis:6379/0}
+      - YUXI_PROCESSING_QUEUE_REDIS_TIMEOUT=${YUXI_PROCESSING_QUEUE_REDIS_TIMEOUT:-1.0}
+      - YUXI_PROCESSING_STALE_SECONDS=${YUXI_PROCESSING_STALE_SECONDS:-600}
       - POSTGRES_URL=${POSTGRES_URL:-postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-yuxi_know}}
       - POSTGRES_POOL_SIZE=${POSTGRES_POOL_SIZE:-40}
       - POSTGRES_MAX_OVERFLOW=${POSTGRES_MAX_OVERFLOW:-20}
@@ -77,6 +80,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      kb-queue-redis:
+        condition: service_started
 
   crawler:
     build:
@@ -155,6 +160,22 @@ services:
   app-redis:
     image: redis:7-alpine
     container_name: app-redis
+    networks:
+      - app-network
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: 8g
+    ipc: host
+    restart: unless-stopped
+
+  kb-queue-redis:
+    image: redis:7-alpine
+    container_name: kb-queue-redis
     networks:
       - app-network
     ulimits:

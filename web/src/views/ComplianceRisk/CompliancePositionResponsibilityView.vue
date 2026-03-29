@@ -20,75 +20,145 @@
         </a-input>
         <a-button type="primary" @click="handleSearch">搜索</a-button>
         <a-select v-model:value="filters.department" class="pr-select" placeholder="全部部门" allow-clear>
-          <a-select-option value="合规管理部">合规管理部</a-select-option>
-          <a-select-option value="物资部">物资部</a-select-option>
-          <a-select-option value="建设部">建设部</a-select-option>
-          <a-select-option value="财务部">财务部</a-select-option>
-          <a-select-option value="安全部">安全部</a-select-option>
-          <a-select-option value="营销部">营销部</a-select-option>
-          <a-select-option value="人资部">人资部</a-select-option>
-          <a-select-option value="法务部">法务部</a-select-option>
+          <a-select-option v-for="dept in departments" :key="dept" :value="dept">{{ dept }}</a-select-option>
         </a-select>
       </div>
 
       <div class="pr-summary">共 {{ filteredList.length }} 条记录</div>
 
-      <div class="pr-list">
-        <div v-for="row in filteredList" :key="row.id" class="pr-item" @click="openDetail(row)">
-          <div class="pr-item-main">
-            <div class="pr-item-code">{{ row.code }}</div>
-            <div class="pr-item-title">{{ row.title }}</div>
-            <div class="pr-item-tags">
-              <a-tag class="tag-dept">{{ row.department }}</a-tag>
-              <a-tag class="tag-type">{{ row.complianceType }}</a-tag>
+      <a-spin :spinning="loading">
+        <a-pagination
+          v-if="filteredList.length > 0"
+          class="pr-pagination"
+          size="small"
+          :current="pagination.current"
+          :page-size="pagination.pageSize"
+          :total="filteredList.length"
+          :show-size-changer="true"
+          :page-size-options="['10', '20', '50', '100']"
+          :show-total="(total) => `共 ${total} 条`"
+          @change="handlePageChange"
+          @showSizeChange="handlePageChange"
+        />
+        <div class="pr-list-scroll">
+          <div class="pr-list">
+            <div v-for="row in pagedList" :key="row.id" class="pr-item" @click="openDetail(row)">
+              <div class="pr-item-main">
+                <div class="pr-item-code">{{ row.code }}</div>
+                <div class="pr-item-title">{{ row.title }}</div>
+                <div class="pr-item-tags">
+                  <a-tag class="tag-dept">{{ row.department || '-' }}</a-tag>
+                  <a-tag class="tag-type">{{ row.compliance_type || '-' }}</a-tag>
+                </div>
+              </div>
+              <ChevronRight class="pr-arrow" size="18" />
             </div>
+            <a-empty v-if="!loading && filteredList.length === 0" description="暂无数据" />
           </div>
-          <ChevronRight class="pr-arrow" size="18" />
         </div>
-      </div>
+      </a-spin>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { message } from 'ant-design-vue'
 import { Search, ChevronRight } from 'lucide-vue-next'
 
+import { complianceApi } from '@/apis/compliance_api'
+
 const router = useRouter()
+const route = useRoute()
+const loading = ref(false)
+const list = ref([])
+const pagination = ref({
+  current: 1,
+  pageSize: 20
+})
 
 const filters = ref({
   keyword: '',
   department: undefined
 })
 
-const list = ref([
-  { id: 'GW-001', code: 'GW-001', title: '合规管理专员', department: '合规管理部', complianceType: '法律合规' },
-  { id: 'GW-002', code: 'GW-002', title: '采购主管', department: '物资部', complianceType: '廉洁合规' },
-  { id: 'GW-003', code: 'GW-003', title: '工程项目经理', department: '建设部', complianceType: '工程合规' },
-  { id: 'GW-004', code: 'GW-004', title: '财务审核员', department: '财务部', complianceType: '财务合规' },
-  { id: 'GW-005', code: 'GW-005', title: '安全监督员', department: '安全部', complianceType: '安全合规' },
-  { id: 'GW-006', code: 'GW-006', title: '营销稽核员', department: '营销部', complianceType: '营销合规' },
-  { id: 'GW-007', code: 'GW-007', title: '人力资源专员', department: '人资部', complianceType: '廉洁合规' },
-  { id: 'GW-008', code: 'GW-008', title: '法律事务专员', department: '法务部', complianceType: '法律合规' }
-])
+const departments = computed(() => {
+  return [...new Set((list.value || []).map((item) => item.department).filter(Boolean))]
+})
 
 const filteredList = computed(() => {
   const kw = (filters.value.keyword || '').trim()
-  return list.value.filter((r) => {
-    const hitKw = !kw || r.title.includes(kw) || r.department.includes(kw) || r.complianceType.includes(kw) || r.code.includes(kw)
+  return (list.value || []).filter((r) => {
+    const hitKw =
+      !kw ||
+      (r.title || '').includes(kw) ||
+      (r.department || '').includes(kw) ||
+      (r.compliance_type || '').includes(kw) ||
+      (r.code || '').includes(kw)
     const hitDept = !filters.value.department || r.department === filters.value.department
     return hitKw && hitDept
   })
 })
 
+const pagedList = computed(() => {
+  const start = (pagination.value.current - 1) * pagination.value.pageSize
+  const end = start + pagination.value.pageSize
+  return filteredList.value.slice(start, end)
+})
+
+const fetchList = async () => {
+  loading.value = true
+  try {
+    const res = await complianceApi.getPositionResponsibility()
+    list.value = res.data || []
+  } catch (error) {
+    message.error(error.message || '获取岗位职责清单失败')
+  } finally {
+    loading.value = false
+  }
+}
+
 const handleSearch = () => {
-  // 假数据，仅触发过滤
+  pagination.value.current = 1
+}
+
+const handlePageChange = (page, pageSize) => {
+  pagination.value.current = page
+  pagination.value.pageSize = pageSize
 }
 
 const openDetail = (row) => {
   router.push(`/compliance-risk/position-responsibility/${row.id}`)
 }
+
+onMounted(fetchList)
+
+watch(
+  () => route.query.keyword,
+  (value) => {
+    filters.value.keyword = typeof value === 'string' ? value : ''
+    pagination.value.current = 1
+  },
+  { immediate: true }
+)
+
+watch(
+  () => filters.value.department,
+  () => {
+    pagination.value.current = 1
+  }
+)
+
+watch(
+  () => filteredList.value.length,
+  (total) => {
+    const maxPage = Math.max(1, Math.ceil(total / pagination.value.pageSize))
+    if (pagination.value.current > maxPage) {
+      pagination.value.current = maxPage
+    }
+  }
+)
 </script>
 
 <style scoped lang="less">
@@ -101,6 +171,9 @@ const openDetail = (row) => {
   border: 1px solid var(--gray-200);
   border-radius: 12px;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 72px);
 }
 
 .pr-head {
@@ -136,7 +209,7 @@ const openDetail = (row) => {
 }
 
 .pr-select {
-  width: 130px;
+  width: 140px;
 }
 
 .pr-summary {
@@ -148,7 +221,33 @@ const openDetail = (row) => {
 }
 
 .pr-list {
+  margin-top: 0;
+}
+
+.pr-pagination {
   margin-top: 10px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pr-list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
+}
+
+.pr-card :deep(.ant-spin-nested-loading) {
+  flex: 1;
+  min-height: 0;
+}
+
+.pr-card :deep(.ant-spin-container) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .pr-item {
@@ -206,5 +305,15 @@ const openDetail = (row) => {
   flex: 0 0 auto;
   margin-top: 4px;
 }
-</style>
 
+@media (max-width: 1024px) {
+  .pr-card {
+    height: auto;
+  }
+  .pr-list-scroll {
+    flex: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+}
+</style>

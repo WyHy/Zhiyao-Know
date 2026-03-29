@@ -13,6 +13,7 @@ from server.routers.system_router import system
 from server.routers.task_router import tasks
 from server.routers.kb_manage_router import kb_manage
 from server.routers.file_search_router import file_search
+from server.routers.compliance_router import compliance
 
 router = APIRouter()
 
@@ -30,3 +31,4 @@ router.include_router(tasks)  # /api/tasks/*
 router.include_router(mcp)  # /api/system/mcp-servers/*
 router.include_router(kb_manage)  # /api/kb-manage/*
 router.include_router(file_search)  # /api/files/*
+router.include_router(compliance)  # /api/compliance-risk/*

@@ -1,7 +1,10 @@
 import asyncio
 import os
+import socket
 from abc import ABC, abstractmethod
+from datetime import timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 from src.utils import logger
 from src.utils.datetime_utils import coerce_any_to_utc_datetime, utc_isoformat
@@ -44,6 +47,9 @@ class KnowledgeBase(ABC):
     # 类级别的处理队列，跟踪所有正在处理的文件
     _processing_files = set()
     _processing_lock = None
+    _redis_queue_config: dict[str, Any] | None = None
+    _redis_queue_config_initialized = False
+    _redis_queue_key = "yuxi:kb:processing_files"
 
     def __init__(self, work_dir: str):
         """
@@ -700,9 +706,13 @@ class KnowledgeBase(ABC):
         Args:
             file_id: 文件ID
         """
+        if cls._redis_sadd(file_id):
+            logger.debug(f"Added file {file_id} to redis processing queue")
+            return
+
         with cls._processing_lock:
             cls._processing_files.add(file_id)
-            logger.debug(f"Added file {file_id} to processing queue")
+            logger.debug(f"Added file {file_id} to in-memory processing queue")
 
     @classmethod
     def _remove_from_processing_queue(cls, file_id: str) -> None:
@@ -712,9 +722,13 @@ class KnowledgeBase(ABC):
         Args:
             file_id: 文件ID
         """
+        if cls._redis_srem(file_id):
+            logger.debug(f"Removed file {file_id} from redis processing queue")
+            return
+
         with cls._processing_lock:
             cls._processing_files.discard(file_id)
-            logger.debug(f"Removed file {file_id} from processing queue")
+            logger.debug(f"Removed file {file_id} from in-memory processing queue")
 
     @classmethod
     def _is_file_in_processing_queue(cls, file_id: str) -> bool:
@@ -727,8 +741,132 @@ class KnowledgeBase(ABC):
         Returns:
             bool: 文件是否在处理队列中
         """
+        in_redis = cls._redis_sismember(file_id)
+        if in_redis is not None:
+            return in_redis
+
         with cls._processing_lock:
             return file_id in cls._processing_files
+
+    @classmethod
+    def _get_redis_queue_config(cls) -> dict[str, Any] | None:
+        if cls._redis_queue_config_initialized:
+            return cls._redis_queue_config
+
+        cls._redis_queue_config_initialized = True
+        redis_url = os.environ.get("YUXI_PROCESSING_QUEUE_REDIS_URL", "").strip()
+        if not redis_url:
+            return None
+
+        parsed = urlparse(redis_url)
+        if parsed.scheme not in {"redis", "rediss"}:
+            logger.warning(
+                f"Unsupported YUXI_PROCESSING_QUEUE_REDIS_URL scheme: {parsed.scheme}, fallback to in-memory queue"
+            )
+            return None
+
+        host = parsed.hostname
+        if not host:
+            logger.warning("YUXI_PROCESSING_QUEUE_REDIS_URL missing host, fallback to in-memory queue")
+            return None
+
+        db = 0
+        if parsed.path and parsed.path != "/":
+            try:
+                db = int(parsed.path.lstrip("/"))
+            except ValueError:
+                logger.warning(
+                    f"Invalid redis db in YUXI_PROCESSING_QUEUE_REDIS_URL: {parsed.path}, use db=0 instead"
+                )
+
+        cls._redis_queue_config = {
+            "host": host,
+            "port": parsed.port or 6379,
+            "db": db,
+            "password": parsed.password,
+            "timeout": float(os.environ.get("YUXI_PROCESSING_QUEUE_REDIS_TIMEOUT", "1.0")),
+        }
+        logger.info(
+            f"Using redis processing queue at {cls._redis_queue_config['host']}:{cls._redis_queue_config['port']}/"
+            f"{cls._redis_queue_config['db']}"
+        )
+        return cls._redis_queue_config
+
+    @classmethod
+    def _redis_execute(cls, *parts: str) -> Any:
+        config = cls._get_redis_queue_config()
+        if not config:
+            return None
+
+        def _pack_command(command_parts: tuple[str, ...]) -> bytes:
+            out = [f"*{len(command_parts)}\r\n".encode("utf-8")]
+            for part in command_parts:
+                encoded = part.encode("utf-8")
+                out.append(f"${len(encoded)}\r\n".encode("utf-8"))
+                out.append(encoded + b"\r\n")
+            return b"".join(out)
+
+        def _readline(sock_file) -> bytes:
+            line = sock_file.readline()
+            if not line:
+                raise ConnectionError("Redis connection closed")
+            return line.rstrip(b"\r\n")
+
+        try:
+            with socket.create_connection((config["host"], config["port"]), timeout=config["timeout"]) as sock:
+                with sock.makefile("rwb") as sock_file:
+                    if config["password"]:
+                        sock_file.write(_pack_command(("AUTH", config["password"])))
+                        sock_file.flush()
+                        if _readline(sock_file) != b"+OK":
+                            raise ConnectionError("Redis AUTH failed")
+                    if config["db"] > 0:
+                        sock_file.write(_pack_command(("SELECT", str(config["db"]))))
+                        sock_file.flush()
+                        if _readline(sock_file) != b"+OK":
+                            raise ConnectionError("Redis SELECT failed")
+
+                    sock_file.write(_pack_command(tuple(parts)))
+                    sock_file.flush()
+                    line = _readline(sock_file)
+                    prefix = line[:1]
+                    payload = line[1:]
+
+                    if prefix == b"+":
+                        return payload.decode("utf-8")
+                    if prefix == b":":
+                        return int(payload)
+                    if prefix == b"$":
+                        size = int(payload)
+                        if size == -1:
+                            return None
+                        body = sock_file.read(size)
+                        sock_file.read(2)
+                        return body.decode("utf-8")
+                    if prefix == b"-":
+                        raise ConnectionError(f"Redis error: {payload.decode('utf-8')}")
+
+                    raise ConnectionError(f"Unexpected redis response: {line!r}")
+        except Exception as e:
+            logger.warning(f"Redis processing queue unavailable, fallback to in-memory queue: {e}")
+            return None
+
+    @classmethod
+    def _redis_sadd(cls, file_id: str) -> bool:
+        result = cls._redis_execute("SADD", cls._redis_queue_key, file_id)
+        return isinstance(result, int)
+
+    @classmethod
+    def _redis_srem(cls, file_id: str) -> bool:
+        result = cls._redis_execute("SREM", cls._redis_queue_key, file_id)
+        return isinstance(result, int)
+
+    @classmethod
+    def _redis_sismember(cls, file_id: str) -> bool | None:
+        result = cls._redis_execute("SISMEMBER", cls._redis_queue_key, file_id)
+        if isinstance(result, int):
+            return result == 1
+        return None
 
     def _check_and_fix_processing_status(self, db_id: str) -> None:
         """
@@ -740,6 +878,8 @@ class KnowledgeBase(ABC):
         """
         try:
             status_changed = False
+            stale_seconds = int(os.environ.get("YUXI_PROCESSING_STALE_SECONDS", "600"))
+            now_dt = coerce_any_to_utc_datetime(utc_isoformat())
 
             # 定义需要检查的中间状态及其对应的错误状态
             intermediate_states = {
@@ -754,11 +894,19 @@ class KnowledgeBase(ABC):
                     current_status = file_info.get("status")
 
                     if current_status in intermediate_states:
+                        updated_at = file_info.get("updated_at")
+                        updated_dt = coerce_any_to_utc_datetime(updated_at)
+                        if not updated_dt:
+                            continue
+                        # 避免误判正在处理中的任务：仅清理长时间无更新的中间状态
+                        if now_dt - updated_dt < timedelta(seconds=stale_seconds):
+                            continue
                         # 检查文件是否真的在处理队列中
                         if not self._is_file_in_processing_queue(file_id):
                             error_status = intermediate_states[current_status]
                             logger.warning(
                                 f"File {file_id} has {current_status} status but is not in processing queue, "
+                                f"stale for {(now_dt - updated_dt).total_seconds():.1f}s, "
                                 f"marking as {error_status}"
                             )
                             self.files_meta[file_id]["status"] = error_status
@@ -771,6 +919,11 @@ class KnowledgeBase(ABC):
             # 如果有状态变更，保存元数据
             if status_changed:
                 logger.info(f"Fixed interrupted processing status for database {db_id}")
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._save_metadata())
+                except RuntimeError:
+                    asyncio.run(self._save_metadata())
 
         except Exception as e:
             logger.error(f"Error checking processing status for database {db_id}: {e}")

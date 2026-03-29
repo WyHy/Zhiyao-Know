@@ -25,47 +25,70 @@
           <a-select-option value="低风险">低风险</a-select-option>
         </a-select>
         <a-select v-model:value="filters.department" class="rl-select" placeholder="全部部门" allow-clear>
-          <a-select-option value="物资部">物资部</a-select-option>
-          <a-select-option value="财务部">财务部</a-select-option>
-          <a-select-option value="法务部">法务部</a-select-option>
-          <a-select-option value="安全部">安全部</a-select-option>
-          <a-select-option value="营销部">营销部</a-select-option>
-          <a-select-option value="信息部">信息部</a-select-option>
+          <a-select-option v-for="dept in departments" :key="dept" :value="dept">{{ dept }}</a-select-option>
         </a-select>
       </div>
 
       <div class="rl-summary">共 {{ filteredList.length }} 条记录</div>
 
-      <div class="rl-list">
-        <div v-for="row in filteredList" :key="row.id" class="rl-item" @click="openDetail(row)">
-          <div class="rl-item-main">
-            <div class="rl-item-top">
-              <a-tag :color="row.levelColor" class="rl-tag">{{ row.level }}</a-tag>
-              <a-tag color="blue" class="rl-tag">{{ row.category }}</a-tag>
-            </div>
-            <div class="rl-item-title">{{ row.title }}</div>
-            <div class="rl-item-desc">{{ row.desc }}</div>
-            <div class="rl-item-chips">
-              <a-tag v-for="chip in row.chips" :key="chip" class="rl-chip">{{ chip }}</a-tag>
-            </div>
-          </div>
+      <a-spin :spinning="loading">
+        <a-pagination
+          v-if="filteredList.length > 0"
+          class="rl-pagination"
+          size="small"
+          :current="pagination.current"
+          :page-size="pagination.pageSize"
+          :total="filteredList.length"
+          :show-size-changer="true"
+          :page-size-options="['10', '20', '50', '100']"
+          :show-total="(total) => `共 ${total} 条`"
+          @change="handlePageChange"
+          @showSizeChange="handlePageChange"
+        />
+        <div class="rl-list-scroll">
+          <div class="rl-list">
+            <div v-for="row in pagedList" :key="row.id" class="rl-item" @click="openDetail(row)">
+              <div class="rl-item-main">
+                <div class="rl-item-top">
+                  <a-tag :color="levelColor(row.level)" class="rl-tag">{{ row.level || '未分级' }}</a-tag>
+                  <a-tag color="blue" class="rl-tag">{{ row.category || '综合合规' }}</a-tag>
+                </div>
+                <div class="rl-item-title">{{ row.title }}</div>
+                <div class="rl-item-desc">{{ row.desc }}</div>
+                <div class="rl-item-chips">
+                  <a-tag v-for="chip in row.chips || []" :key="chip" class="rl-chip">{{ chip }}</a-tag>
+                </div>
+              </div>
 
-          <div class="rl-item-side">
-            <a-tag color="blue" class="rl-code">{{ row.code }}</a-tag>
-            <ChevronRight class="rl-arrow" size="18" />
+              <div class="rl-item-side">
+                <a-tag color="blue" class="rl-code">{{ row.code }}</a-tag>
+                <ChevronRight class="rl-arrow" size="18" />
+              </div>
+            </div>
+            <a-empty v-if="!loading && filteredList.length === 0" description="暂无数据" />
           </div>
         </div>
-      </div>
+      </a-spin>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { message } from 'ant-design-vue'
 import { Search, ChevronRight } from 'lucide-vue-next'
 
+import { complianceApi } from '@/apis/compliance_api'
+
 const router = useRouter()
+const route = useRoute()
+const loading = ref(false)
+const list = ref([])
+const pagination = ref({
+  current: 1,
+  pageSize: 20
+})
 
 const filters = ref({
   keyword: '',
@@ -73,119 +96,91 @@ const filters = ref({
   department: undefined
 })
 
-const list = ref([
-  {
-    id: 'FX-001',
-    code: 'FX-001',
-    level: '高风险',
-    levelColor: 'red',
-    category: '法律合规',
-    title: '招标采购立项',
-    desc: '未按规定履行招标程序，存在规避招标、化整为零规避招标等违规行为',
-    chips: ['招标采购', '采购项目立项', '物资部'],
-    department: '物资部'
-  },
-  {
-    id: 'FX-002',
-    code: 'FX-002',
-    level: '高风险',
-    levelColor: 'red',
-    category: '工程合规',
-    title: '工程违规转包、分包',
-    desc: '工程违规转包、分包，导致工程质量风险，违反合同约定及法律规定',
-    chips: ['工程建设', '工程分包管理', '建设部'],
-    department: '建设部'
-  },
-  {
-    id: 'FX-003',
-    code: 'FX-003',
-    level: '中风险',
-    levelColor: 'orange',
-    category: '财务合规',
-    title: '超预算/超额度支出',
-    desc: '未按规定走审批，擅自调整预算或超额支出，存在财务违规风险',
-    chips: ['财务管理', '预算执行', '财务部'],
-    department: '财务部'
-  },
-  {
-    id: 'FX-004',
-    code: 'FX-004',
-    level: '高风险',
-    levelColor: 'red',
-    category: '安全合规',
-    title: '作业现场违规',
-    desc: '作业人员未按规定佩戴安全防护用品，存在人身伤亡事故风险',
-    chips: ['安全生产', '作业现场管控', '安全部'],
-    department: '安全部'
-  },
-  {
-    id: 'FX-005',
-    code: 'FX-005',
-    level: '中风险',
-    levelColor: 'orange',
-    category: '营销合规',
-    title: '异常电费处理',
-    desc: '电费计量装置异常未及时发现处理，造成电费损失，影响营业收入',
-    chips: ['营销服务', '电费抄核收', '营销部'],
-    department: '营销部'
-  },
-  {
-    id: 'FX-006',
-    code: 'FX-006',
-    level: '高风险',
-    levelColor: 'red',
-    category: '廉洁合规',
-    title: '招投标过程违规操作',
-    desc: '招投标过程中存在暗箱操作、违反公平竞争原则，存在廉洁风险',
-    chips: ['人力资源', '招投管理', '人资部'],
-    department: '人资部'
-  },
-  {
-    id: 'FX-007',
-    code: 'FX-007',
-    level: '中风险',
-    levelColor: 'orange',
-    category: '信息合规',
-    title: '重要业务数据未按规定备份',
-    desc: '重要业务数据未按规定备份，存在数据丢失、泄露风险',
-    chips: ['信息安全', '数据管理', '信息部'],
-    department: '信息部'
-  },
-  {
-    id: 'FX-008',
-    code: 'FX-008',
-    level: '低风险',
-    levelColor: 'default',
-    category: '廉洁合规',
-    title: '账实不符风险',
-    desc: '物资库存管理混乱，账实不符，存在物资损失和舞弊风险',
-    chips: ['物资管理', '库存管理', '物资部'],
-    department: '物资部'
-  }
-])
+const departments = computed(() => {
+  return [...new Set((list.value || []).map((item) => item.department).filter(Boolean))]
+})
 
 const filteredList = computed(() => {
   const kw = (filters.value.keyword || '').trim()
-  return list.value.filter((r) => {
+  return (list.value || []).filter((r) => {
     const hitKw =
       !kw ||
-      r.title.includes(kw) ||
-      r.desc.includes(kw) ||
-      r.category.includes(kw) ||
-      r.chips.some((c) => c.includes(kw))
+      (r.title || '').includes(kw) ||
+      (r.desc || '').includes(kw) ||
+      (r.category || '').includes(kw) ||
+      (r.code || '').includes(kw) ||
+      (r.chips || []).some((c) => c.includes(kw))
     const hitLevel = !filters.value.level || r.level === filters.value.level
     const hitDept = !filters.value.department || r.department === filters.value.department
     return hitKw && hitLevel && hitDept
   })
 })
 
+const pagedList = computed(() => {
+  const start = (pagination.value.current - 1) * pagination.value.pageSize
+  const end = start + pagination.value.pageSize
+  return filteredList.value.slice(start, end)
+})
+
+const levelColor = (level) => {
+  if (level === '高风险') return 'red'
+  if (level === '中风险') return 'orange'
+  if (level === '低风险') return 'green'
+  return 'default'
+}
+
+const fetchList = async () => {
+  loading.value = true
+  try {
+    const res = await complianceApi.getRiskLibrary()
+    list.value = res.data || []
+  } catch (error) {
+    message.error(error.message || '获取风险库失败')
+  } finally {
+    loading.value = false
+  }
+}
+
 const handleSearch = () => {
-  // 假数据，仅触发过滤
+  pagination.value.current = 1
+}
+
+const handlePageChange = (page, pageSize) => {
+  pagination.value.current = page
+  pagination.value.pageSize = pageSize
 }
 
 const openDetail = (row) => {
   router.push(`/compliance-risk/risk-library/${row.id}`)
 }
+
+onMounted(fetchList)
+
+watch(
+  () => route.query.keyword,
+  (value) => {
+    filters.value.keyword = typeof value === 'string' ? value : ''
+    pagination.value.current = 1
+  },
+  { immediate: true }
+)
+
+watch(
+  () => [filters.value.level, filters.value.department],
+  () => {
+    pagination.value.current = 1
+  }
+)
+
+watch(
+  () => filteredList.value.length,
+  (total) => {
+    const maxPage = Math.max(1, Math.ceil(total / pagination.value.pageSize))
+    if (pagination.value.current > maxPage) {
+      pagination.value.current = maxPage
+    }
+  }
+)
 </script>
 
 <style scoped lang="less">
@@ -198,6 +193,9 @@ const openDetail = (row) => {
   border: 1px solid var(--gray-200);
   border-radius: 12px;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 72px);
 }
 
 .rl-head {
@@ -245,7 +243,33 @@ const openDetail = (row) => {
 }
 
 .rl-list {
+  margin-top: 0;
+}
+
+.rl-pagination {
   margin-top: 10px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.rl-list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
+}
+
+.rl-card :deep(.ant-spin-nested-loading) {
+  flex: 1;
+  min-height: 0;
+}
+
+.rl-card :deep(.ant-spin-container) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .rl-item {
@@ -266,14 +290,23 @@ const openDetail = (row) => {
   }
 }
 
+.rl-item-main {
+  min-width: 0;
+}
+
 .rl-item-top {
   display: flex;
   gap: 8px;
   align-items: center;
-  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.rl-tag {
+  border-radius: 10px;
 }
 
 .rl-item-title {
+  margin-top: 6px;
   font-size: 14px;
   font-weight: 700;
   color: var(--gray-1000);
@@ -297,15 +330,14 @@ const openDetail = (row) => {
   background: rgba(59, 130, 246, 0.08);
   color: var(--gray-700);
   border: none;
+  border-radius: 10px;
 }
 
 .rl-item-side {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
   flex: 0 0 auto;
-  padding-right: 4px;
 }
 
 .rl-code {
@@ -315,5 +347,15 @@ const openDetail = (row) => {
 .rl-arrow {
   color: var(--gray-400);
 }
-</style>
 
+@media (max-width: 1024px) {
+  .rl-card {
+    height: auto;
+  }
+  .rl-list-scroll {
+    flex: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+}
+</style>

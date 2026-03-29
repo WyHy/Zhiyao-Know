@@ -61,6 +61,10 @@ const handleMenuClick = (item) => {
 
 .cr-sider {
   flex: 0 0 220px;
+  position: sticky;
+  top: 16px;
+  align-self: flex-start;
+  max-height: calc(100vh - 32px);
 }
 
 .cr-sider-card {
@@ -68,6 +72,8 @@ const handleMenuClick = (item) => {
   border: 1px solid var(--gray-200);
   border-radius: 12px;
   padding: 10px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
 }
 
 .cr-menu-item {
@@ -101,7 +107,12 @@ const handleMenuClick = (item) => {
   }
   .cr-sider {
     flex: 0 0 auto;
+    position: static;
+    max-height: none;
+  }
+  .cr-sider-card {
+    max-height: none;
+    overflow: visible;
   }
 }
 </style>
-
