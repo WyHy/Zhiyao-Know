@@ -53,7 +53,13 @@ def _safe_code(prefix: str, sheet: str, row_no: int, text: str) -> str:
 def _cell(ws, row_no: int, col_no: int | None) -> str:
     if not col_no:
         return ""
-    return _normalize_text(ws.cell(row=row_no, column=col_no).value)
+    value = ws.cell(row=row_no, column=col_no).value
+    if value is None:
+        for merged in ws.merged_cells.ranges:
+            if merged.min_row <= row_no <= merged.max_row and merged.min_col <= col_no <= merged.max_col:
+                value = ws.cell(row=merged.min_row, column=merged.min_col).value
+                break
+    return _normalize_text(value)
 
 
 def _find_columns(
@@ -77,7 +83,8 @@ def _find_columns(
                         continue
                     if candidate_norm == cell_norm or candidate_norm in cell_norm:
                         prev = matched.get(key)
-                        if prev is None or row_no >= prev[0]:
+                        # 优先保留更靠前的表头匹配，避免“其他/备注”等正文词命中后把 header_row 推到很后面。
+                        if prev is None or row_no <= prev[0]:
                             matched[key] = (row_no, col_no)
                         break
 
@@ -135,6 +142,9 @@ def _parse_risk_library(file_name: str, workbook) -> list[dict[str, Any]]:
             required={"title", "code", "desc"},
         )
 
+        business_lv1 = ""
+        business_lv2 = ""
+        department = ""
         for row_no in range(header_row + 1, ws.max_row + 1):
             title = _cell(ws, row_no, columns.get("title"))
             code = _cell(ws, row_no, columns.get("code"))
@@ -154,9 +164,9 @@ def _parse_risk_library(file_name: str, workbook) -> list[dict[str, Any]]:
                 level = "低风险"
             else:
                 level = raw_level[:20]
-            business_lv1 = _cell(ws, row_no, columns.get("business_lv1"))
-            business_lv2 = _cell(ws, row_no, columns.get("business_lv2"))
-            department = _cell(ws, row_no, columns.get("department"))
+            business_lv1 = _cell(ws, row_no, columns.get("business_lv1")) or business_lv1
+            business_lv2 = _cell(ws, row_no, columns.get("business_lv2")) or business_lv2
+            department = _cell(ws, row_no, columns.get("department")) or department
             basis_parts = [
                 _cell(ws, row_no, columns.get("basis_policy")),
                 _cell(ws, row_no, columns.get("basis_law")),
@@ -217,6 +227,10 @@ def _parse_process_checklist(file_name: str, workbook) -> list[dict[str, Any]]:
             required={"code", "title"},
         )
 
+        level1_process = ""
+        level2_process = ""
+        level3_process = ""
+        department = ""
         for row_no in range(header_row + 1, ws.max_row + 1):
             code = _cell(ws, row_no, columns.get("code"))
             title = _cell(ws, row_no, columns.get("title"))
@@ -226,6 +240,10 @@ def _parse_process_checklist(file_name: str, workbook) -> list[dict[str, Any]]:
                 continue
 
             code = (code.splitlines()[0].strip() if code else "") or _safe_code("LC", ws.title, row_no, title)
+            level1_process = _cell(ws, row_no, columns.get("level1_process")) or level1_process
+            level2_process = _cell(ws, row_no, columns.get("level2_process")) or level2_process
+            level3_process = _cell(ws, row_no, columns.get("level3_process")) or level3_process
+            department = _cell(ws, row_no, columns.get("department")) or department
             risk_desc = _cell(ws, row_no, columns.get("risk_desc"))
             risk_points = _cell(ws, row_no, columns.get("risk_points"))
             source_basis = "\n".join(
@@ -245,11 +263,11 @@ def _parse_process_checklist(file_name: str, workbook) -> list[dict[str, Any]]:
                 {
                     "code": code,
                     "title": title or code,
-                    "department": _cell(ws, row_no, columns.get("department")),
+                    "department": department,
                     "owner": "",
-                    "level1_process": _cell(ws, row_no, columns.get("level1_process")),
-                    "level2_process": _cell(ws, row_no, columns.get("level2_process")),
-                    "level3_process": _cell(ws, row_no, columns.get("level3_process")),
+                    "level1_process": level1_process,
+                    "level2_process": level2_process,
+                    "level3_process": level3_process,
                     "risk_desc": risk_desc or risk_points,
                     "compliance_points": compliance_points,
                     "source_basis": source_basis,
@@ -280,8 +298,9 @@ def _parse_position_responsibility(file_name: str, workbook) -> list[dict[str, A
             required={"department", "title"},
         )
 
+        department = ""
         for row_no in range(header_row + 1, ws.max_row + 1):
-            department = _cell(ws, row_no, columns.get("department"))
+            department = _cell(ws, row_no, columns.get("department")) or department
             title = _cell(ws, row_no, columns.get("title"))
             if not department and not title:
                 continue
