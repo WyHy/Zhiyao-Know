@@ -41,7 +41,14 @@ class AgentManager(metaclass=SingletonMeta):
 
     async def get_agents_info(self):
         agents = self.get_agents()
-        return await asyncio.gather(*[a.get_info() for a in agents])
+        results = await asyncio.gather(*[a.get_info() for a in agents], return_exceptions=True)
+        infos = []
+        for agent, result in zip(agents, results, strict=False):
+            if isinstance(result, Exception):
+                logger.warning(f"获取智能体信息失败，已跳过 {agent.id}: {result}")
+                continue
+            infos.append(result)
+        return infos
 
     def auto_discover_agents(self):
         """自动发现并注册 src/agents/ 下的所有智能体。

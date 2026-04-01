@@ -26,8 +26,19 @@ class BaseEmbeddingModel(ABC):
         self.model_id = model_id
         self.dimension = dimension
         self.base_url = get_docker_safe_url(base_url)
-        self.api_key = os.getenv(api_key, api_key)
+        self.api_key = self._normalize_api_key(os.getenv(api_key, api_key))
         self.embed_state = {}
+
+    @staticmethod
+    def _normalize_api_key(api_key: str | None) -> str:
+        """规范化 API Key，避免把 .env 行内注释拼进请求头"""
+        if not api_key:
+            return ""
+        value = str(api_key).strip()
+        # Docker env_file 不支持行内注释，`KEY=  # comment` 会把 `# comment` 作为值
+        if "#" in value:
+            value = value.split("#", 1)[0].strip()
+        return value
 
     @abstractmethod
     def encode(self, message: list[str] | str) -> list[list[float]]:
