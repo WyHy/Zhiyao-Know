@@ -288,9 +288,6 @@ class JingzhouComplianceSeedService:
             elif kind == "process":
                 records = cls._extract_process_records(ws, sheet_name)
 
-            if not records:
-                continue
-
             out_file = output_dir / f"{cls._sanitize_name(sheet_name)}.md"
             content = [
                 f"# {sheet_name}",
@@ -298,7 +295,16 @@ class JingzhouComplianceSeedService:
                 f"- 记录数: {len(records)}",
                 "",
             ]
-            content.extend(records)
+            if records:
+                content.extend(records)
+            else:
+                # 不再静默跳过空 sheet，避免“sheet 丢失”错觉，便于排查源数据与映射问题
+                content.extend(
+                    [
+                        "> 本 sheet 未抽取到可入库记录，请检查表头行、编码列与合并单元格映射。",
+                        "",
+                    ]
+                )
             out_file.write_text("\n".join(content), encoding="utf-8")
             produced.append(out_file)
 
@@ -307,6 +313,12 @@ class JingzhouComplianceSeedService:
     @staticmethod
     def _cell(ws, row: int, col: int) -> str:
         value = ws.cell(row=row, column=col).value
+        if value is None:
+            # 对合并单元格做回填：若命中 merged range，读取左上角单元格值
+            for merged in ws.merged_cells.ranges:
+                if merged.min_row <= row <= merged.max_row and merged.min_col <= col <= merged.max_col:
+                    value = ws.cell(row=merged.min_row, column=merged.min_col).value
+                    break
         if value is None:
             return ""
         return str(value).strip()
