@@ -1,7 +1,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed, provide, watch } from 'vue'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck, Folder, FileSearch, MessageCircle, FileText, Database, FileCheck } from 'lucide-vue-next'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck, Folder, FileSearch, MessageCircle, FileText, Database } from 'lucide-vue-next'
 
 import { useConfigStore } from '@/stores/config'
 import { useDatabaseStore } from '@/stores/database'
@@ -72,6 +72,7 @@ onMounted(async () => {
 
 // 打印当前页面的路由信息，使用 vue3 的 setup composition API
 const route = useRoute()
+const router = useRouter()
 console.log(route)
 
 const activeTaskCount = computed(() => activeCountRef.value || 0)
@@ -130,15 +131,6 @@ const mainList = computed(() => {
     hidden: false
   })
 
-  // 合规风险中心（所有用户可见）
-  list.push({
-    name: '合规风险中心',
-    path: '/compliance-risk',
-    icon: FileCheck,
-    activeIcon: FileCheck,
-    hidden: false
-  })
-  
   // 知识库管理菜单（仅管理员可见）
   if (isAdmin) {
     list.push({
@@ -150,10 +142,10 @@ const mainList = computed(() => {
     })
   }
   
-  // 数据采集菜单（仅管理员可见）
+  // 案例管理菜单（仅管理员可见）
   if (isAdmin) {
     list.push({
-      name: '数据采集',
+      name: '案例管理',
       path: '/data-collection/monitoring-config',
       icon: Database,
       activeIcon: Database,
@@ -175,6 +167,29 @@ const mainList = computed(() => {
   return list
 })
 
+const knowledgeEntryTabs = [
+  { key: 'knowledge', label: '知识库', path: '/knowledge' },
+  { key: 'compliance-risk', label: '合规风险中心', path: '/compliance-risk/knowledge' }
+]
+
+const showKnowledgeEntryTabs = computed(
+  () => route.path.startsWith('/knowledge') || route.path.startsWith('/compliance-risk')
+)
+
+const isNavActive = (item) => {
+  if (item.path === '/knowledge') {
+    return route.path.startsWith('/knowledge') || route.path.startsWith('/compliance-risk')
+  }
+  return route.path === item.path || route.path.startsWith(item.path + '/')
+}
+
+const isKnowledgeEntryTabActive = (tabPath) => {
+  if (tabPath.startsWith('/compliance-risk')) {
+    return route.path.startsWith('/compliance-risk')
+  }
+  return route.path === tabPath || route.path.startsWith(tabPath + '/')
+}
+
 // Provide settings modal methods to child components
 provide('settingsModal', {
   openSettingsModal
@@ -195,12 +210,12 @@ provide('settingsModal', {
           :to="item.path"
           v-show="!item.hidden"
           class="nav-item"
-          :class="{ active: route.path === item.path || route.path.startsWith(item.path + '/') }"
+          :class="{ active: isNavActive(item) }"
         >
           <div class="nav-item-content">
             <component
               class="icon"
-              :is="route.path === item.path || route.path.startsWith(item.path + '/') ? item.activeIcon : item.icon"
+              :is="isNavActive(item) ? item.activeIcon : item.icon"
               size="22"
             />
             <span class="nav-item-text">{{ item.name }}</span>
@@ -231,12 +246,25 @@ provide('settingsModal', {
         <UserInfoComponent />
       </div>
     </div>
-    <router-view v-slot="{ Component, route }" id="app-router-view">
-      <keep-alive v-if="route.meta.keepAlive !== false">
-        <component :is="Component" />
-      </keep-alive>
-      <component :is="Component" v-else />
-    </router-view>
+    <div class="content-area">
+      <div v-if="showKnowledgeEntryTabs" class="knowledge-entry-tabs">
+        <a-button
+          v-for="tab in knowledgeEntryTabs"
+          :key="tab.key"
+          class="entry-tab-btn"
+          :type="isKnowledgeEntryTabActive(tab.path) ? 'primary' : 'default'"
+          @click="router.push(tab.path)"
+        >
+          {{ tab.label }}
+        </a-button>
+      </div>
+      <router-view v-slot="{ Component, route }" id="app-router-view">
+        <keep-alive v-if="route.meta.keepAlive !== false">
+          <component :is="Component" />
+        </keep-alive>
+        <component :is="Component" v-else />
+      </router-view>
+    </div>
 
     <!-- Debug Modal -->
     <a-modal
@@ -274,6 +302,28 @@ div.header,
   // height: 100%;
   max-width: 100%;
   user-select: none;
+}
+
+.content-area {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.knowledge-entry-tabs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--gray-200);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.entry-tab-btn {
+  min-width: 124px;
 }
 
 #app-router-view {
