@@ -146,12 +146,14 @@ class HuizhouImporter:
         self.embed_model_name = os.getenv("YUXI_EMBED_MODEL")
         self.dept_id_cache = {}  # 部门路径 -> 部门ID
         self.kb_id_cache = {}    # 知识库名称 -> 知识库ID
+        self.kb_file_index_cache = {}  # 知识库ID -> 文件名索引
         self.stats = {
             "departments": 0,
             "knowledge_bases": 0,
             "files_uploaded": 0,
             "files_failed": 0,
             "ingest_tasks_submitted": 0,
+            "files_precheck_skipped": 0,
         }
         self.progress_total_kbs = 0
         self.progress_total_files = 0
@@ -515,36 +517,75 @@ class HuizhouImporter:
         if self.dry_run:
             return None
 
+        file_index = await self.get_kb_file_index(kb_id)
+        if filename in file_index:
+            return file_index[filename]
+
+        # 未命中时刷新一次缓存再查（处理外部并发导入导致的缓存过期）
+        file_index = await self.get_kb_file_index(kb_id, refresh=True)
+        return file_index.get(filename)
+
+    async def get_kb_file_index(self, kb_id: str, refresh: bool = False) -> dict[str, dict]:
+        """获取知识库文件名索引，避免重复对已存在文件发上传请求"""
+        if self.dry_run:
+            return {}
+
+        if not refresh and kb_id in self.kb_file_index_cache:
+            return self.kb_file_index_cache[kb_id]
+
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.get(
                 f"{API_BASE_URL}/api/knowledge/databases/{kb_id}",
                 headers=self.get_headers(),
             )
             if response.status_code != 200:
-                return None
+                return {}
 
             data = response.json() or {}
             files = data.get("files") or {}
+            index = {}
             for file_id, meta in files.items():
-                if meta.get("filename") == filename or meta.get("original_filename") == filename:
-                    return {
-                        "file_id": file_id,
-                        "status": meta.get("status"),
-                        "filename": meta.get("filename") or filename,
-                    }
-        return None
+                file_meta = {
+                    "file_id": file_id,
+                    "status": meta.get("status"),
+                    "filename": meta.get("filename") or meta.get("original_filename") or "",
+                    "original_filename": meta.get("original_filename") or meta.get("filename") or "",
+                }
+                if file_meta["filename"]:
+                    index[file_meta["filename"]] = file_meta
+                if file_meta["original_filename"]:
+                    index[file_meta["original_filename"]] = file_meta
+            self.kb_file_index_cache[kb_id] = index
+            return index
 
     async def upload_file(self, kb_id: str, file_path: str) -> dict | None:
         """上传文件到知识库，返回上传结果字典"""
         filename = os.path.basename(file_path)
         short_name = filename[:40] + "..." if len(filename) > 40 else filename
-        print(f"      上传: {short_name}")
-        
+        print(f"      处理文件: {short_name}")
+
         if self.dry_run:
             print(f"        [DRY-RUN] 跳过上传")
             return {"kind": "uploaded", "minio_path": f"minio://fake/{filename}", "content_hash": "fake_hash"}
-        
+
         try:
+            # 先做本地预检查：命中正常状态则直接跳过，不发上传请求
+            existing = await self.get_file_meta_by_filename(kb_id, filename)
+            if existing:
+                status = (existing.get("status") or "").lower()
+                if status in ABNORMAL_FILE_STATUSES:
+                    print(
+                        f"        ⚠️  预检查命中：文件已存在且状态异常，加入补漏队列 "
+                        f"(file_id={existing['file_id']}, status={existing['status']})"
+                    )
+                    return {"kind": "existing_retry", **existing}
+                print(
+                    f"        ℹ️  预检查命中：文件已存在且状态正常，直接跳过上传请求 "
+                    f"(file_id={existing['file_id']}, status={existing['status']})"
+                )
+                self.stats["files_precheck_skipped"] += 1
+                return {"kind": "existing_skip", **existing}
+
             file_size = os.path.getsize(file_path)
             file_size_mb = file_size / (1024 * 1024)
             print(f"      上传: {short_name} ({file_size_mb:.2f} MB)")
@@ -575,6 +616,7 @@ class HuizhouImporter:
                                 "filename": filename,
                             }
                         elif response.status_code == 409:
+                            # 兜底：并发情况下即使预检查未命中，服务端仍可判重
                             existing = await self.get_file_meta_by_filename(kb_id, filename)
                             if existing:
                                 status = (existing.get("status") or "").lower()
@@ -588,6 +630,7 @@ class HuizhouImporter:
                                     f"        ℹ️  文件已存在且状态正常，直接跳过 "
                                     f"(file_id={existing['file_id']}, status={existing['status']})"
                                 )
+                                self.stats["files_precheck_skipped"] += 1
                                 return {"kind": "existing_skip", **existing}
                             print(f"        ⚠️  文件已存在，但未查到对应记录，跳过")
                             return None
@@ -838,6 +881,7 @@ class HuizhouImporter:
                 continue
             
             self.kb_id_cache[kb_name] = kb_id
+            self.kb_file_index_cache.pop(kb_id, None)
             self.stats["knowledge_bases"] += 1
             
             # 上传文件
@@ -886,6 +930,7 @@ class HuizhouImporter:
         if not self.dry_run:
             print(f"  文件上传成功: {self.stats['files_uploaded']} 个")
             print(f"  文件上传失败: {self.stats['files_failed']} 个")
+            print(f"  预检查命中跳过: {self.stats['files_precheck_skipped']} 个")
             print(f"  入库任务提交: {self.stats['ingest_tasks_submitted']} 个")
 
 
