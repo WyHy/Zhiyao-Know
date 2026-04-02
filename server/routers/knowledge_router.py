@@ -177,11 +177,21 @@ async def create_database(
                 if default_dept:
                     user_department_id = default_dept[0]
         
-        # 强制设置 share_config：全员可见，同时记录创建者部门
-        share_config = {
-            "is_shared": True,
-            "accessible_departments": [user_department_id] if user_department_id else [],
-        }
+        # 归一化 share_config：
+        # 1. 优先使用前端传入配置
+        # 2. 未传入时，默认全员可见，并记录创建者部门用于部门检索
+        if share_config is None:
+            share_config = {
+                "is_shared": True,
+                "accessible_departments": [user_department_id] if user_department_id else [],
+            }
+        else:
+            is_shared = bool(share_config.get("is_shared", True))
+            accessible_departments = share_config.get("accessible_departments") or []
+            share_config = {
+                "is_shared": is_shared,
+                "accessible_departments": accessible_departments,
+            }
 
         embed_info = config.embed_model_names[embed_model_name]
         # 将Pydantic模型转换为字典以便JSON序列化

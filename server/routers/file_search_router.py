@@ -57,6 +57,7 @@ async def search_files(
         result = await service.search_files(
             user_id=current_user.id,
             user_role=current_user.role,
+            user_department_id=current_user.department_id,
             department_ids=search_req.department_ids,
             include_subdepts=search_req.include_subdepts,
             keyword=search_req.keyword,
@@ -116,6 +117,7 @@ async def search_files_get(
         result = await service.search_files(
             user_id=current_user.id,
             user_role=current_user.role,
+            user_department_id=current_user.department_id,
             department_ids=dept_ids,
             include_subdepts=include_subdepts,
             keyword=keyword,

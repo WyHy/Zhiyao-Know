@@ -85,7 +85,7 @@
 
     <!-- 统计信息 -->
     <div class="summary-bar">
-      共{{ pagination.total }}项 来自{{ departmentStatsCount }}个知识库 {{ departmentStatsCount }}个部门
+      共{{ pagination.total }}项 来自{{ kbCount }}个知识库 {{ deptCount }}个部门
     </div>
 
     <!-- 文件列表表格 -->
@@ -148,7 +148,10 @@
             </span>
           </div>
           <span v-else-if="column.key === 'size'">
-            {{ record.size ? formatFileSize(record.size) : '-' }}
+            {{ record.file_size ? formatFileSize(record.file_size) : '-' }}
+          </span>
+          <span v-else-if="column.key === 'kb_name'">
+            {{ record.kb_name || '-' }}
           </span>
           <div
             v-else-if="column.key === 'status'"
@@ -288,11 +291,8 @@ const pagination = ref({
 
 // 部门统计
 const departmentStats = ref({})
-
-// 计算部门统计数量
-const departmentStatsCount = computed(() => {
-  return Object.keys(departmentStats.value).length || 0
-})
+const kbCount = ref(0)
+const deptCount = ref(0)
 
 // 表格列定义
 const columns = [
@@ -303,8 +303,15 @@ const columns = [
     ellipsis: true
   },
   {
+    title: '知识库',
+    dataIndex: 'kb_name',
+    key: 'kb_name',
+    width: 200,
+    ellipsis: true
+  },
+  {
     title: '大小',
-    dataIndex: 'size',
+    dataIndex: 'file_size',
     key: 'size',
     width: 100,
     align: 'right'
@@ -379,16 +386,6 @@ const loadDepartments = async () => {
     // 保持树形结构
     departmentList.value = list
     
-    // 如果用户有部门ID，设置为默认选中值并展开
-    if (userStore.departmentId && searchParams.value.department_ids.length === 0) {
-      searchParams.value.department_ids = [userStore.departmentId]
-      selectedDepartmentKeys.value = [userStore.departmentId]
-      // 延迟展开，确保树数据已加载
-      setTimeout(() => {
-        expandToNode(userStore.departmentId)
-      }, 100)
-    }
-    
     console.log('处理后的部门列表:', departmentList.value)
   } catch (error) {
     console.error('加载部门列表失败:', error)
@@ -399,15 +396,6 @@ const loadDepartments = async () => {
         name: userStore.departmentName,
         children: []
       }]
-      // 设置默认选中值并展开
-      if (searchParams.value.department_ids.length === 0) {
-        searchParams.value.department_ids = [userStore.departmentId]
-        selectedDepartmentKeys.value = [userStore.departmentId]
-        // 延迟展开，确保树数据已加载
-        setTimeout(() => {
-          expandToNode(userStore.departmentId)
-        }, 100)
-      }
     }
   }
 }
@@ -448,6 +436,8 @@ const handleSearch = async () => {
         page_size: response.data.page_size || 20
       }
       departmentStats.value = response.data.department_stats || {}
+      kbCount.value = response.data.kb_count || 0
+      deptCount.value = response.data.dept_count || Object.keys(departmentStats.value).length || 0
     } else {
       message.error('搜索失败')
       fileList.value = []
@@ -457,6 +447,8 @@ const handleSearch = async () => {
         page_size: 20
       }
       departmentStats.value = {}
+      kbCount.value = 0
+      deptCount.value = 0
     }
   } catch (error) {
     console.error('搜索文件失败:', error)
@@ -468,6 +460,8 @@ const handleSearch = async () => {
       page_size: 20
     }
     departmentStats.value = {}
+    kbCount.value = 0
+    deptCount.value = 0
   } finally {
     loading.value = false
   }

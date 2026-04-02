@@ -36,6 +36,8 @@ class FirstRunSeedService:
     KB_NAME = "荆州营销部问答隐藏知识库"
     KB_DESC = "系统初始化自动导入，仅绑定 huizhou_power_qa 使用。"
     AGENT_ID = "HuizhouPowerQAAgent"
+    MINI_AGENT_ID = "MiniAgent"
+    MINI_AGENT_KB_NAMES = ["流程管控清单", "岗位义务清单", "合规风险库"]
     DATASET_CSV = "hz_power_marketing_qa_dataset_20260320.csv"
     DATASET_JSONL = "hz_power_marketing_qa_dataset_20260320.jsonl"
 
@@ -114,6 +116,10 @@ class FirstRunSeedService:
         await cls._ensure_agent_configs_only_hidden(
             operator_id=str(operator_id), department_id=department_id, kb_name=cls.KB_NAME
         )
+        await cls._ensure_mini_agent_default_kbs(
+            operator_id=str(operator_id),
+            department_id=department_id,
+        )
 
         dataset_path = cls._resolve_dataset_csv_path()
         if dataset_path is None:
@@ -142,6 +148,69 @@ class FirstRunSeedService:
             message=msg,
             dataset_path=str(dataset_path),
         )
+
+    @classmethod
+    async def _ensure_mini_agent_default_kbs(cls, operator_id: str, department_id: int | None) -> None:
+        async with pg_manager.get_async_session_context() as session:
+            repo = AgentConfigRepository(session)
+            kb_rows = await session.execute(
+                text(
+                    """
+                    SELECT db_id, name
+                    FROM knowledge_bases
+                    WHERE name = ANY(:kb_names)
+                    ORDER BY name
+                    """
+                ),
+                {"kb_names": cls.MINI_AGENT_KB_NAMES},
+            )
+            selected = kb_rows.fetchall()
+            found_names = [row[1] for row in selected]
+            found_db_ids = [row[0] for row in selected]
+
+            missing = [name for name in cls.MINI_AGENT_KB_NAMES if name not in found_names]
+            if missing:
+                logger.warning(f"MiniAgent default KBs missing: {missing}")
+
+            await session.execute(
+                text("DELETE FROM kb_agent_bindings WHERE agent_id = :agent_id"),
+                {"agent_id": cls.MINI_AGENT_ID},
+            )
+            for db_id in found_db_ids:
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO kb_agent_bindings (kb_id, agent_id)
+                        VALUES (:kb_id, :agent_id)
+                        ON CONFLICT (kb_id, agent_id) DO NOTHING
+                        """
+                    ),
+                    {"kb_id": db_id, "agent_id": cls.MINI_AGENT_ID},
+                )
+
+            if department_id is not None:
+                default_cfg = await repo.get_or_create_default(
+                    department_id=department_id,
+                    agent_id=cls.MINI_AGENT_ID,
+                    created_by=operator_id,
+                )
+                cfg_json = dict(default_cfg.config_json or {})
+                ctx = dict(cfg_json.get("context") or {})
+                ctx["knowledges"] = found_names
+                cfg_json["context"] = ctx
+                await repo.update(default_cfg, config_json=cfg_json, updated_by=operator_id)
+                await repo.set_default(config=default_cfg, updated_by=operator_id)
+
+            cfg_rows = await session.execute(select(AgentConfig).where(AgentConfig.agent_id == cls.MINI_AGENT_ID))
+            cfgs = list(cfg_rows.scalars().all())
+            for cfg in cfgs:
+                cfg_json = dict(cfg.config_json or {})
+                ctx = dict(cfg_json.get("context") or {})
+                if ctx.get("knowledges") == found_names:
+                    continue
+                ctx["knowledges"] = found_names
+                cfg_json["context"] = ctx
+                await repo.update(cfg, config_json=cfg_json, updated_by=operator_id)
 
     @classmethod
     async def _ensure_agent_binding_only_hidden(cls, kb_id: str) -> None:
