@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import io
 import os
 import re
 import time
@@ -20,6 +21,7 @@ from langchain_community.document_loaders import (
 )
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from markdownify import markdownify as md_convert
+from openpyxl import load_workbook
 
 from src.knowledge.utils import calculate_content_hash
 from src.storage.minio import get_minio_client
@@ -167,6 +169,65 @@ def _convert_with_docling(file_path: Path, params: dict | None = None) -> str:
     return doc.export_to_markdown()
 
 
+def _escape_markdown_cell(value) -> str:
+    """将单元格内容转为安全的 Markdown 文本"""
+    if value is None:
+        return ""
+    text = str(value)
+    return text.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+
+
+def _convert_xlsx_lightweight(file_path: Path, params: dict | None = None) -> str:
+    """
+    轻量解析 xlsx，避免 docling 在大表场景下内存峰值过高导致进程被系统杀死。
+    """
+    params = params or {}
+    max_rows_per_sheet = int(params.get("excel_max_rows_per_sheet", 5000))
+
+    wb = load_workbook(filename=str(file_path), read_only=True, data_only=True)
+    try:
+        out = io.StringIO()
+        total_rows_written = 0
+
+        for ws in wb.worksheets:
+            out.write(f"## {ws.title}\n\n")
+
+            rows_iter = ws.iter_rows(values_only=True)
+            header = None
+            rows_written_this_sheet = 0
+
+            for row in rows_iter:
+                # 跳过纯空行
+                if row is None or all(cell is None for cell in row):
+                    continue
+
+                row_values = [_escape_markdown_cell(c) for c in row]
+
+                if header is None:
+                    header = row_values
+                    out.write("| " + " | ".join(header) + " |\n")
+                    out.write("| " + " | ".join(["---"] * len(header)) + " |\n")
+                    continue
+
+                out.write("| " + " | ".join(row_values) + " |\n")
+                rows_written_this_sheet += 1
+                total_rows_written += 1
+
+                if rows_written_this_sheet >= max_rows_per_sheet:
+                    logger.warning(
+                        f"Sheet {ws.title} 超过最大行数限制 {max_rows_per_sheet}，已截断。"
+                        "可通过 processing_params.excel_max_rows_per_sheet 调整。"
+                    )
+                    break
+
+            out.write("\n")
+
+        logger.info(f"XLSX 轻量解析完成: {file_path.name}, 写入数据行数={total_rows_written}")
+        return out.getvalue()
+    finally:
+        wb.close()
+
+
 def chunk_with_parser(file_path, params=None):
     """
     使用文件解析器将文件切分成固定大小的块
@@ -258,13 +319,24 @@ def pdfreader(file_path, params=None):
     assert file_path.exists(), "File not found"
     assert file_path.suffix.lower() == ".pdf", "File format not supported"
 
-    # 使用LangChain的PDF加载器
-    loader = PyPDFLoader(str(file_path))
-    docs = loader.load()
+    # 使用 LangChain + pypdf 优先解析；部分 PDF 缺失字体 bbox 字段时降级为 PyMuPDF
+    try:
+        loader = PyPDFLoader(str(file_path))
+        docs = loader.load()
+        return "\n\n".join([d.page_content for d in docs])
+    except KeyError as e:
+        if str(e) != "'bbox'":
+            raise
 
-    # 简单的拼接起来之后返回纯文本
-    text = "\n\n".join([d.page_content for d in docs])
-    return text
+        logger.warning(f"PyPDFLoader 解析失败（缺失 bbox），降级为 PyMuPDF: {file_path}")
+        import fitz
+
+        doc = fitz.open(str(file_path))
+        try:
+            pages = [page.get_text("text") for page in doc]
+            return "\n\n".join(pages)
+        finally:
+            doc.close()
 
 
 def plainreader(file_path):
@@ -486,8 +558,12 @@ async def process_file_to_markdown(file_path: str, params: dict | None = None) -
 
             result = markdown_content.strip()
 
-        elif file_ext in [".xls", ".xlsx"]:
-            # 使用 Docling 处理 Excel 文件
+        elif file_ext == ".xlsx":
+            # xlsx 走轻量解析，避免 docling 导致内存峰值过高
+            result = _convert_xlsx_lightweight(file_path_obj, params=params)
+
+        elif file_ext == ".xls":
+            # 旧版 xls 仍使用 Docling
             result = _convert_with_docling(file_path_obj, params=params)
 
         elif file_ext == ".json":

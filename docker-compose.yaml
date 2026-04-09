@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
-    image: yuxi-api:0.5.dev
+    # image: yuxi-api:0.5.dev
     container_name: api-dev
     working_dir: /app
     volumes:
@@ -87,7 +87,7 @@ services:
     build:
       context: .
       dockerfile: docker/crawler.Dockerfile
-    image: yuxi-crawler:0.1.dev
+    # image: yuxi-crawler:0.1.dev
     container_name: crawler-dev
     working_dir: /app
     volumes:
@@ -128,7 +128,9 @@ services:
       start_period: 60s
 
   crawler-worker:
-    image: yuxi-crawler:0.1.dev
+    build:
+      context: .
+      dockerfile: docker/crawler.Dockerfile
     container_name: crawler-worker-dev
     working_dir: /app
     volumes:
@@ -245,7 +247,7 @@ services:
       context: .
       dockerfile: docker/web.Dockerfile
       target: production
-    image: yuxi-web:0.5.dev
+    # image: yuxi-web:0.5.dev
     container_name: web-dev
     ports:
       - "80:80"
