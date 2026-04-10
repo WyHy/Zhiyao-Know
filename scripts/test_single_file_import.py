@@ -28,7 +28,7 @@ USERNAME = (
 PASSWORD = (
     os.getenv("YUXI_TEST_PASSWORD")
     or os.getenv("YUXI_SUPER_ADMIN_PASSWORD")
-    or "1234hbnj"
+    or "sgcc@0716!Jz"
 )
 KB_NAME = os.getenv("YUXI_TEST_KB_NAME", "单文件导入测试库")
 PRESET_TOKEN = os.getenv("YUXI_TEST_TOKEN")

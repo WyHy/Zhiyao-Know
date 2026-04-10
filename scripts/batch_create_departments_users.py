@@ -10,6 +10,7 @@
 """
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -20,8 +21,17 @@ from src.utils import logger
 
 # API 配置
 API_BASE_URL = "http://47.122.119.66:5050/api"
-ADMIN_USERNAME = "whzykj"
-ADMIN_PASSWORD = "sgtGtw@h3%dji"
+ADMIN_USERNAME = os.getenv("YUXI_SUPER_ADMIN_NAME", "whzykj")
+ADMIN_PASSWORD = (
+    os.getenv("YUXI_SUPER_ADMIN_PASSWORD")
+    or os.getenv("YUXI_TEST_PASSWORD")
+    or "sgcc@0716!Jz"
+)
+USER_DEFAULT_PASSWORD = (
+    os.getenv("YUXI_TEST_PASSWORD")
+    or os.getenv("YUXI_SUPER_ADMIN_PASSWORD")
+    or "sgcc@0716!Jz"
+)
 
 
 # 部门数据结构（树形）
@@ -131,36 +141,39 @@ DEPARTMENTS_DATA = [
 # 用户数据（将分配到不同部门）
 USERS_DATA = [
     # 总部
-    {"username": "张伟", "user_id": "zhangwei", "password": "Pass1234", "role": "admin", "phone": "13800000001", "departments": ["总经理办公室"]},
-    {"username": "李娜", "user_id": "lina", "password": "Pass1234", "role": "user", "phone": "13800000002", "departments": ["人力资源部", "招聘组"]},
-    {"username": "王强", "user_id": "wangqiang", "password": "Pass1234", "role": "user", "phone": "13800000003", "departments": ["人力资源部", "培训组"]},
-    {"username": "刘洋", "user_id": "liuyang", "password": "Pass1234", "role": "user", "phone": "13800000004", "departments": ["财务部", "会计组"]},
-    {"username": "陈静", "user_id": "chenjing", "password": "Pass1234", "role": "user", "phone": "13800000005", "departments": ["财务部", "出纳组"]},
+    {"username": "张伟", "user_id": "zhangwei", "password": "", "role": "admin", "phone": "13800000001", "departments": ["总经理办公室"]},
+    {"username": "李娜", "user_id": "lina", "password": "", "role": "user", "phone": "13800000002", "departments": ["人力资源部", "招聘组"]},
+    {"username": "王强", "user_id": "wangqiang", "password": "", "role": "user", "phone": "13800000003", "departments": ["人力资源部", "培训组"]},
+    {"username": "刘洋", "user_id": "liuyang", "password": "", "role": "user", "phone": "13800000004", "departments": ["财务部", "会计组"]},
+    {"username": "陈静", "user_id": "chenjing", "password": "", "role": "user", "phone": "13800000005", "departments": ["财务部", "出纳组"]},
     
     # 技术中心
-    {"username": "赵敏", "user_id": "zhaomin", "password": "Pass1234", "role": "admin", "phone": "13800000006", "departments": ["技术中心", "研发部"]},
-    {"username": "孙浩", "user_id": "sunhao", "password": "Pass1234", "role": "user", "phone": "13800000007", "departments": ["研发部", "前端组"]},
-    {"username": "周婷", "user_id": "zhouting", "password": "Pass1234", "role": "user", "phone": "13800000008", "departments": ["研发部", "前端组"]},
-    {"username": "吴磊", "user_id": "wulei", "password": "Pass1234", "role": "user", "phone": "13800000009", "departments": ["研发部", "后端组"]},
-    {"username": "郑芳", "user_id": "zhengfang", "password": "Pass1234", "role": "user", "phone": "13800000010", "departments": ["研发部", "后端组"]},
-    {"username": "钱勇", "user_id": "qianyong", "password": "Pass1234", "role": "user", "phone": "13800000011", "departments": ["研发部", "算法组"]},
-    {"username": "冯丽", "user_id": "fengli", "password": "Pass1234", "role": "user", "phone": "13800000012", "departments": ["测试部", "功能测试组"]},
-    {"username": "许杰", "user_id": "xujie", "password": "Pass1234", "role": "user", "phone": "13800000013", "departments": ["测试部", "性能测试组"]},
-    {"username": "何涛", "user_id": "hetao", "password": "Pass1234", "role": "user", "phone": "13800000014", "departments": ["运维部"]},
+    {"username": "赵敏", "user_id": "zhaomin", "password": "", "role": "admin", "phone": "13800000006", "departments": ["技术中心", "研发部"]},
+    {"username": "孙浩", "user_id": "sunhao", "password": "", "role": "user", "phone": "13800000007", "departments": ["研发部", "前端组"]},
+    {"username": "周婷", "user_id": "zhouting", "password": "", "role": "user", "phone": "13800000008", "departments": ["研发部", "前端组"]},
+    {"username": "吴磊", "user_id": "wulei", "password": "", "role": "user", "phone": "13800000009", "departments": ["研发部", "后端组"]},
+    {"username": "郑芳", "user_id": "zhengfang", "password": "", "role": "user", "phone": "13800000010", "departments": ["研发部", "后端组"]},
+    {"username": "钱勇", "user_id": "qianyong", "password": "", "role": "user", "phone": "13800000011", "departments": ["研发部", "算法组"]},
+    {"username": "冯丽", "user_id": "fengli", "password": "", "role": "user", "phone": "13800000012", "departments": ["测试部", "功能测试组"]},
+    {"username": "许杰", "user_id": "xujie", "password": "", "role": "user", "phone": "13800000013", "departments": ["测试部", "性能测试组"]},
+    {"username": "何涛", "user_id": "hetao", "password": "", "role": "user", "phone": "13800000014", "departments": ["运维部"]},
     
     # 市场营销中心
-    {"username": "曹雪", "user_id": "caoxue", "password": "Pass1234", "role": "admin", "phone": "13800000015", "departments": ["市场营销中心"]},
-    {"username": "夏明", "user_id": "xiaming", "password": "Pass1234", "role": "user", "phone": "13800000016", "departments": ["市场部", "品牌组"]},
-    {"username": "姜伟", "user_id": "jiangwei", "password": "Pass1234", "role": "user", "phone": "13800000017", "departments": ["市场部", "推广组"]},
-    {"username": "尹静", "user_id": "yinjing", "password": "Pass1234", "role": "user", "phone": "13800000018", "departments": ["销售部", "华北区"]},
-    {"username": "秦浩", "user_id": "qinhao", "password": "Pass1234", "role": "user", "phone": "13800000019", "departments": ["销售部", "华东区"]},
-    {"username": "苏婷", "user_id": "suting", "password": "Pass1234", "role": "user", "phone": "13800000020", "departments": ["销售部", "华南区"]},
+    {"username": "曹雪", "user_id": "caoxue", "password": "", "role": "admin", "phone": "13800000015", "departments": ["市场营销中心"]},
+    {"username": "夏明", "user_id": "xiaming", "password": "", "role": "user", "phone": "13800000016", "departments": ["市场部", "品牌组"]},
+    {"username": "姜伟", "user_id": "jiangwei", "password": "", "role": "user", "phone": "13800000017", "departments": ["市场部", "推广组"]},
+    {"username": "尹静", "user_id": "yinjing", "password": "", "role": "user", "phone": "13800000018", "departments": ["销售部", "华北区"]},
+    {"username": "秦浩", "user_id": "qinhao", "password": "", "role": "user", "phone": "13800000019", "departments": ["销售部", "华东区"]},
+    {"username": "苏婷", "user_id": "suting", "password": "", "role": "user", "phone": "13800000020", "departments": ["销售部", "华南区"]},
     
     # 产品中心
-    {"username": "袁凯", "user_id": "yuankai", "password": "Pass1234", "role": "user", "phone": "13800000021", "departments": ["产品中心", "产品规划部"]},
-    {"username": "潘丽", "user_id": "panli", "password": "Pass1234", "role": "user", "phone": "13800000022", "departments": ["UI/UX设计部"]},
-    {"username": "汤勇", "user_id": "tangyong", "password": "Pass1234", "role": "user", "phone": "13800000023", "departments": ["产品运营部"]},
+    {"username": "袁凯", "user_id": "yuankai", "password": "", "role": "user", "phone": "13800000021", "departments": ["产品中心", "产品规划部"]},
+    {"username": "潘丽", "user_id": "panli", "password": "", "role": "user", "phone": "13800000022", "departments": ["UI/UX设计部"]},
+    {"username": "汤勇", "user_id": "tangyong", "password": "", "role": "user", "phone": "13800000023", "departments": ["产品运营部"]},
 ]
+
+for user in USERS_DATA:
+    user["password"] = USER_DEFAULT_PASSWORD
 
 
 class BatchCreator:
@@ -379,9 +392,9 @@ class BatchCreator:
         print("\n" + "=" * 60)
         print("🎉 批量创建完成！")
         print("\n可以使用以下账号登录测试:")
-        print(f"  管理员: admin / 1234hbnj")
-        print(f"  普通用户: zhangwei / Pass1234")
-        print(f"  技术部门: sunhao / Pass1234")
+        print(f"  管理员: {ADMIN_USERNAME} / {USER_DEFAULT_PASSWORD}")
+        print(f"  普通用户: zhangwei / {USER_DEFAULT_PASSWORD}")
+        print(f"  技术部门: sunhao / {USER_DEFAULT_PASSWORD}")
         print("=" * 60)
     
     def _print_tree(self, nodes, level=0):

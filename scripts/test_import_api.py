@@ -7,11 +7,12 @@
 """
 
 import asyncio
+import os
 import httpx
 
 API_BASE_URL = "http://localhost:5050"
-USERNAME = "admin"
-PASSWORD = "1234hbnj"
+USERNAME = os.getenv("YUXI_TEST_USERNAME") or os.getenv("YUXI_SUPER_ADMIN_NAME") or "admin"
+PASSWORD = os.getenv("YUXI_TEST_PASSWORD") or os.getenv("YUXI_SUPER_ADMIN_PASSWORD") or "sgcc@0716!Jz"
 
 
 async def test_apis():

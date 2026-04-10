@@ -44,8 +44,8 @@ def test_evaluation_metrics():
 
 
 BASE_URL = "http://localhost:5050"
-USERNAME = "zwj"
-PASSWORD = "zwj12138"
+USERNAME = os.getenv("YUXI_TEST_USERNAME") or os.getenv("YUXI_SUPER_ADMIN_NAME") or "zwj"
+PASSWORD = os.getenv("YUXI_TEST_PASSWORD") or os.getenv("YUXI_SUPER_ADMIN_PASSWORD") or "sgcc@0716!Jz"
 DB_ID = "kb_5e343066eb4713959698ae6ca16843a0"
 
 

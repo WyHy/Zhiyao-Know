@@ -15,6 +15,7 @@
 import argparse
 import asyncio
 import os
+from collections import Counter
 from typing import Any
 
 import httpx
@@ -27,6 +28,7 @@ HTTP_TIMEOUT = float(os.getenv("YUXI_HTTP_TIMEOUT", "120"))
 
 PARSE_RETRY_STATUSES = {"uploaded", "error_parsing", "failed", "parsing"}
 INDEX_RETRY_STATUSES = {"parsed", "error_indexing", "indexing"}
+ABNORMAL_STATUSES = PARSE_RETRY_STATUSES | INDEX_RETRY_STATUSES
 
 
 def batched(items: list[str], size: int) -> list[list[str]]:
@@ -42,6 +44,7 @@ class RecoveryRunner:
         chunk_size: int,
         chunk_overlap: int,
         qa_separator: str,
+        use_reparse_index: bool,
     ):
         self.dry_run = dry_run
         self.target_db_id = db_id
@@ -49,6 +52,7 @@ class RecoveryRunner:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.qa_separator = qa_separator
+        self.use_reparse_index = use_reparse_index
         self.token: str | None = None
         self.stats: dict[str, Any] = {
             "databases_total": 0,
@@ -57,21 +61,20 @@ class RecoveryRunner:
             "index_files": 0,
             "parse_tasks_submitted": 0,
             "index_tasks_submitted": 0,
+            "reparse_index_tasks_submitted": 0,
             "failed_requests": 0,
         }
 
     async def login(self) -> bool:
-        if PRESET_TOKEN:
+        if self.dry_run:
+            print("✅ DRY-RUN 模式：不会提交任务，但仍会登录以读取知识库状态")
+
+        if PRESET_TOKEN and not self.dry_run:
             self.token = PRESET_TOKEN
             if await self._validate_token():
                 print("✅ 使用预设 token 登录成功")
                 return True
             print("⚠️ 预设 token 无效，尝试账号密码登录")
-
-        if self.dry_run:
-            self.token = "dry-run-token"
-            print("✅ DRY-RUN 模式，跳过真实登录")
-            return True
 
         try:
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
@@ -175,24 +178,44 @@ class RecoveryRunner:
         print(f"  ❌ index 提交失败: HTTP {resp.status_code}, {resp.text[:200]}")
         return False
 
+    async def submit_reparse_index(self, db_id: str, file_ids: list[str]) -> bool:
+        if self.dry_run:
+            print(f"  [DRY-RUN] reparse-index files={len(file_ids)}")
+            return True
+        payload = {
+            "file_ids": file_ids,
+            "params": {
+                "chunk_size": self.chunk_size,
+                "chunk_overlap": self.chunk_overlap,
+                "qa_separator": self.qa_separator,
+            },
+        }
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+            resp = await client.post(
+                f"{API_BASE_URL}/api/knowledge/databases/{db_id}/documents/reparse-index",
+                headers=self._headers(),
+                json=payload,
+            )
+        if resp.status_code == 200:
+            task_id = (resp.json() or {}).get("task_id", "unknown")
+            self.stats["reparse_index_tasks_submitted"] += 1
+            print(f"  ✅ reparse-index 任务已提交: task_id={task_id}, files={len(file_ids)}")
+            return True
+        self.stats["failed_requests"] += 1
+        print(f"  ❌ reparse-index 提交失败: HTTP {resp.status_code}, {resp.text[:200]}")
+        return False
+
     async def process_db(self, db_id: str):
         print(f"\n=== 处理知识库: {db_id} ===")
         try:
-            info = await self.get_db_info(db_id)
+            scan = await self.scan_db(db_id)
         except Exception as exc:
             self.stats["failed_requests"] += 1
             print(f"  ❌ 获取知识库信息失败: {exc}")
             return
 
-        files = info.get("files") or {}
-        parse_ids: list[str] = []
-        index_ids: list[str] = []
-        for file_id, meta in files.items():
-            status = str((meta or {}).get("status") or "").lower()
-            if status in PARSE_RETRY_STATUSES:
-                parse_ids.append(file_id)
-            elif status in INDEX_RETRY_STATUSES:
-                index_ids.append(file_id)
+        parse_ids = [item["file_id"] for item in scan["parse_items"]]
+        index_ids = [item["file_id"] for item in scan["index_items"]]
 
         parse_ids.sort()
         index_ids.sort()
@@ -202,13 +225,56 @@ class RecoveryRunner:
         print(f"  parse 候选: {len(parse_ids)}")
         print(f"  index 候选: {len(index_ids)}")
 
-        for group in batched(parse_ids, self.batch_size):
-            await self.submit_parse(db_id, group)
-
-        for group in batched(index_ids, self.batch_size):
-            await self.submit_index(db_id, group)
+        if self.use_reparse_index:
+            # 智能分流：
+            # - 需要重解析的文件：走 reparse-index（解析+入库）
+            # - 已解析/仅入库异常文件：直接走 index
+            for group in batched(parse_ids, self.batch_size):
+                await self.submit_reparse_index(db_id, group)
+            for group in batched(index_ids, self.batch_size):
+                await self.submit_index(db_id, group)
+        else:
+            for group in batched(parse_ids, self.batch_size):
+                await self.submit_parse(db_id, group)
+            for group in batched(index_ids, self.batch_size):
+                await self.submit_index(db_id, group)
 
         self.stats["databases_processed"] += 1
+
+    async def scan_db(self, db_id: str) -> dict[str, Any]:
+        info = await self.get_db_info(db_id)
+        kb_name = info.get("name") or "-"
+        files = info.get("files") or {}
+
+        parse_items: list[dict[str, str]] = []
+        index_items: list[dict[str, str]] = []
+        status_counter = Counter()
+
+        for file_id, meta in files.items():
+            status = str((meta or {}).get("status") or "").lower()
+            if status not in ABNORMAL_STATUSES:
+                continue
+            filename = (
+                (meta or {}).get("filename")
+                or (meta or {}).get("original_filename")
+                or "-"
+            )
+            item = {"file_id": file_id, "filename": filename, "status": status}
+            status_counter[status] += 1
+            if status in PARSE_RETRY_STATUSES:
+                parse_items.append(item)
+            else:
+                index_items.append(item)
+
+        parse_items.sort(key=lambda x: x["file_id"])
+        index_items.sort(key=lambda x: x["file_id"])
+        return {
+            "db_id": db_id,
+            "kb_name": kb_name,
+            "parse_items": parse_items,
+            "index_items": index_items,
+            "status_counter": status_counter,
+        }
 
     async def run(self):
         print("=" * 68)
@@ -217,6 +283,11 @@ class RecoveryRunner:
         print(f"API: {API_BASE_URL}")
         print(f"用户: {USERNAME}")
         print(f"模式: {'DRY-RUN' if self.dry_run else 'EXECUTE'}")
+        print(
+            "处理方式: SMART(解析失败->reparse-index, 已解析->index)"
+            if self.use_reparse_index
+            else "处理方式: PARSE+INDEX(分离)"
+        )
         print(f"批次大小: {self.batch_size}")
         print(f"index 参数: chunk_size={self.chunk_size}, chunk_overlap={self.chunk_overlap}")
 
@@ -234,7 +305,53 @@ class RecoveryRunner:
             print("没有可处理的知识库")
             return
 
+        # 1) 先扫描并打印当前异常状态统计
+        all_scans: list[dict[str, Any]] = []
+        global_counter = Counter()
+        total_abnormal_files = 0
         for db_id in db_ids:
+            try:
+                scan = await self.scan_db(db_id)
+            except Exception as exc:
+                self.stats["failed_requests"] += 1
+                print(f"⚠️ 扫描失败: {db_id}, err={exc}")
+                continue
+            abnormal_count = len(scan["parse_items"]) + len(scan["index_items"])
+            if abnormal_count == 0:
+                continue
+            all_scans.append(scan)
+            total_abnormal_files += abnormal_count
+            global_counter.update(scan["status_counter"])
+
+        print("\n" + "=" * 68)
+        print("异常状态预检查")
+        print("=" * 68)
+        print(f"异常知识库数: {len(all_scans)}")
+        print(f"异常文件总数: {total_abnormal_files}")
+        if global_counter:
+            print("状态分布:")
+            for status, cnt in sorted(global_counter.items(), key=lambda x: (-x[1], x[0])):
+                print(f"  - {status:16s} {cnt}")
+
+        if all_scans:
+            print("\n涉及知识库与文件:")
+            for scan in all_scans:
+                db_id = scan["db_id"]
+                kb_name = scan["kb_name"]
+                items = scan["parse_items"] + scan["index_items"]
+                print(f"\n- [{db_id}] {kb_name} (异常文件: {len(items)})")
+                for item in items:
+                    print(f"    {item['status']:16s} {item['filename']}")
+        else:
+            print("未发现需要补跑的文件。")
+            return
+
+        print("\n开始逐一处理异常知识库...")
+
+        for db_id in db_ids:
+            # 只处理扫描出异常的知识库
+            if not any(s["db_id"] == db_id for s in all_scans):
+                continue
             await self.process_db(db_id)
 
         print("\n" + "=" * 68)
@@ -246,6 +363,7 @@ class RecoveryRunner:
         print(f"index 文件数: {self.stats['index_files']}")
         print(f"parse 任务提交数: {self.stats['parse_tasks_submitted']}")
         print(f"index 任务提交数: {self.stats['index_tasks_submitted']}")
+        print(f"reparse-index 任务提交数: {self.stats['reparse_index_tasks_submitted']}")
         print(f"请求失败次数: {self.stats['failed_requests']}")
 
 
@@ -257,6 +375,11 @@ async def main():
     parser.add_argument("--chunk-size", type=int, default=1000, help="index 的 chunk_size，默认 1000")
     parser.add_argument("--chunk-overlap", type=int, default=200, help="index 的 chunk_overlap，默认 200")
     parser.add_argument("--qa-separator", default="", help="index 的 qa_separator，默认空串")
+    parser.add_argument(
+        "--legacy-separate-submit",
+        action="store_true",
+        help="使用旧逻辑：分别提交 parse/index（默认关闭，默认走 reparse-index 一体）",
+    )
     args = parser.parse_args()
 
     runner = RecoveryRunner(
@@ -266,6 +389,7 @@ async def main():
         chunk_size=args.chunk_size,
         chunk_overlap=args.chunk_overlap,
         qa_separator=args.qa_separator,
+        use_reparse_index=not args.legacy_separate_submit,
     )
     await runner.run()
 

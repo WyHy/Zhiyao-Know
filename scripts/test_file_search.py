@@ -11,6 +11,7 @@
 """
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 import argparse
@@ -240,18 +241,24 @@ async def main():
     parser.add_argument("--user", help="指定测试用户（格式: username:password）")
     args = parser.parse_args()
     
+    default_password = (
+        os.getenv("YUXI_TEST_PASSWORD")
+        or os.getenv("YUXI_SUPER_ADMIN_PASSWORD")
+        or "sgcc@0716!Jz"
+    )
+
     # 根据环境选择配置
     if args.env == "production":
         base_url = "http://47.122.119.66:5050/api"
         test_users = [
-            ("zhangwei", "Pass1234"),  # 生产环境账号
+            (os.getenv("YUXI_TEST_PROD_USERNAME", "zhangwei"), default_password),  # 生产环境账号
         ]
     else:
         base_url = "http://localhost:5050/api"
         test_users = [
-            ("lina", "Pass1234"),      # 普通用户
-            ("wangqiang", "Pass1234"),  # 普通用户
-            ("zhangwei", "Pass1234"),   # 管理员
+            (os.getenv("YUXI_TEST_USER1_USERNAME", "lina"), default_password),       # 普通用户
+            (os.getenv("YUXI_TEST_USER2_USERNAME", "wangqiang"), default_password),  # 普通用户
+            (os.getenv("YUXI_TEST_ADMIN_USERNAME", "zhangwei"), default_password),   # 管理员
         ]
     
     # 如果指定了用户，只测试该用户

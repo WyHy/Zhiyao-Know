@@ -3,6 +3,7 @@
 测试知识库访问控制（黑名单机制）
 """
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -21,11 +22,12 @@ async def test_kb_access_control():
     logger.info("=" * 60)
     
     base_url = "http://localhost:5050"
+    user_password = os.getenv("YUXI_TEST_PASSWORD") or os.getenv("YUXI_SUPER_ADMIN_PASSWORD") or "sgcc@0716!Jz"
     
     # 1. 普通用户默认可以访问所有知识库
     logger.info("1️⃣  测试：普通用户默认可以访问所有知识库")
     client = httpx.AsyncClient(base_url=base_url, timeout=30)
-    resp = await client.post("/api/auth/token", data={"username": "lina", "password": "Pass1234"})
+    resp = await client.post("/api/auth/token", data={"username": "lina", "password": user_password})
     token = resp.json()["access_token"]
     client.headers.update({"Authorization": f"Bearer {token}"})
     
@@ -69,7 +71,7 @@ async def test_kb_access_control():
     # 3. 验证用户现在无法访问该知识库
     logger.info("\n3️⃣  测试：验证李娜现在看不到被禁止的知识库")
     client = httpx.AsyncClient(base_url=base_url, timeout=30)
-    resp = await client.post("/api/auth/token", data={"username": "lina", "password": "Pass1234"})
+    resp = await client.post("/api/auth/token", data={"username": "lina", "password": user_password})
     token = resp.json()["access_token"]
     client.headers.update({"Authorization": f"Bearer {token}"})
     
@@ -87,7 +89,7 @@ async def test_kb_access_control():
     # 4. 验证其他用户仍可以访问
     logger.info("\n4️⃣  测试：验证其他用户（王强）仍可以访问该知识库")
     client = httpx.AsyncClient(base_url=base_url, timeout=30)
-    resp = await client.post("/api/auth/token", data={"username": "wangqiang", "password": "Pass1234"})
+    resp = await client.post("/api/auth/token", data={"username": "wangqiang", "password": user_password})
     token = resp.json()["access_token"]
     client.headers.update({"Authorization": f"Bearer {token}"})
     
@@ -110,7 +112,7 @@ async def test_kb_access_control():
     # 6. 验证用户可以再次访问
     logger.info("\n6️⃣  测试：验证李娜现在可以再次看到该知识库")
     client = httpx.AsyncClient(base_url=base_url, timeout=30)
-    resp = await client.post("/api/auth/token", data={"username": "lina", "password": "Pass1234"})
+    resp = await client.post("/api/auth/token", data={"username": "lina", "password": user_password})
     token = resp.json()["access_token"]
     client.headers.update({"Authorization": f"Bearer {token}"})
     

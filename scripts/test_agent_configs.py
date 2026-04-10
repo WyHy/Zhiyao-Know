@@ -13,10 +13,16 @@ class Account:
     label: str
 
 
+DEFAULT_PASSWORD = (
+    os.getenv("YUXI_TEST_PASSWORD")
+    or os.getenv("YUXI_SUPER_ADMIN_PASSWORD")
+    or "sgcc@0716!Jz"
+)
+
 ACCOUNTS = {
-    "superadmin": Account("zwj", "zwj12138", "superadmin"),
-    "dept_admin": Account("ceshizhuguan", "test_admin123", "dept_admin"),
-    "dept_user": Account("food2025", "jnufood", "dept_user"),
+    "superadmin": Account(os.getenv("YUXI_TEST_SUPERADMIN_USERNAME", "zwj"), DEFAULT_PASSWORD, "superadmin"),
+    "dept_admin": Account(os.getenv("YUXI_TEST_DEPT_ADMIN_USERNAME", "ceshizhuguan"), DEFAULT_PASSWORD, "dept_admin"),
+    "dept_user": Account(os.getenv("YUXI_TEST_DEPT_USER_USERNAME", "food2025"), DEFAULT_PASSWORD, "dept_user"),
 }
 
 
@@ -206,7 +212,7 @@ def main():
 
     tmp_user_payload = {
         "username": f"tmp_user_{int(time.time())}",
-        "password": "tmp_pass_123",
+        "password": DEFAULT_PASSWORD,
         "role": "user",
         "department_id": int(super_dept_id),
     }
@@ -217,7 +223,7 @@ def main():
     tmp_user_login = tmp_user["user_id"]
     tmp_user_id = tmp_user["id"]
 
-    tmp_token, _, _ = login(Account(tmp_user_login, "tmp_pass_123", "tmp_user"))
+    tmp_token, _, _ = login(Account(tmp_user_login, DEFAULT_PASSWORD, "tmp_user"))
     forbidden = _request("POST", f"/api/chat/agent/{agent_id}/configs", token=tmp_token, json_data={"name": "x"})
     assert_forbidden(forbidden, "user create config")
 

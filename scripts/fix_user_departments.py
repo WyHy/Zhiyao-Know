@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -15,8 +16,12 @@ from src.utils import logger
 
 # API 配置
 API_BASE_URL = "http://localhost:5050/api"
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "1234hbnj"
+ADMIN_USERNAME = os.getenv("YUXI_SUPER_ADMIN_NAME", "admin")
+ADMIN_PASSWORD = (
+    os.getenv("YUXI_SUPER_ADMIN_PASSWORD")
+    or os.getenv("YUXI_TEST_PASSWORD")
+    or "sgcc@0716!Jz"
+)
 
 
 # 用户-部门映射（确保每个部门都有人）

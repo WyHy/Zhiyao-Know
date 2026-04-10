@@ -5,6 +5,7 @@ Integration tests for authentication-related API routes.
 from __future__ import annotations
 
 import uuid
+import os
 
 import pytest
 
@@ -28,9 +29,10 @@ async def test_admin_can_login_and_fetch_profile(test_client, admin_headers):
 
 async def test_admin_can_create_and_delete_user(test_client, admin_headers):
     suffix = uuid.uuid4().hex[:8]
+    test_password = os.getenv("YUXI_TEST_PASSWORD") or os.getenv("YUXI_SUPER_ADMIN_PASSWORD") or "sgcc@0716!Jz"
     payload = {
         "username": f"rtu_{suffix}",
-        "password": "routerTest123!",
+        "password": test_password,
         "role": "user",
     }
     create_response = await test_client.post("/api/auth/users", json=payload, headers=admin_headers)

@@ -1,5 +1,12 @@
 import asyncio
 import httpx
+import os
+
+DEFAULT_PASSWORD = (
+    os.getenv("YUXI_TEST_PASSWORD")
+    or os.getenv("YUXI_SUPER_ADMIN_PASSWORD")
+    or "sgcc@0716!Jz"
+)
 
 async def test():
     print('=== 测试 /api/departments 接口权限 ===\n')
@@ -18,7 +25,7 @@ async def test():
     client = httpx.AsyncClient(base_url='http://47.122.119.66:5050', timeout=5)
     resp = await client.post('/api/auth/token', data={
         'username': 'lina',
-        'password': 'Pass1234'
+        'password': DEFAULT_PASSWORD
     })
     
     if resp.status_code == 200:
@@ -46,7 +53,7 @@ async def test():
     client = httpx.AsyncClient(base_url='http://47.122.119.66:5050', timeout=5)
     resp = await client.post('/api/auth/token', data={
         'username': 'zhangwei',
-        'password': 'Pass1234'
+        'password': DEFAULT_PASSWORD
     })
     
     if resp.status_code == 200:

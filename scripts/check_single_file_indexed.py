@@ -18,8 +18,8 @@ from pathlib import Path
 import httpx
 
 API_BASE_URL = os.getenv("YUXI_API_BASE_URL", "http://127.0.0.1:5050")
-USERNAME = os.getenv("YUXI_TEST_USERNAME", "admin")
-PASSWORD = os.getenv("YUXI_TEST_PASSWORD", "Admin@123456")
+USERNAME = os.getenv("YUXI_TEST_USERNAME") or os.getenv("YUXI_SUPER_ADMIN_NAME") or "admin"
+PASSWORD = os.getenv("YUXI_TEST_PASSWORD") or os.getenv("YUXI_SUPER_ADMIN_PASSWORD") or "sgcc@0716!Jz"
 KB_NAME = os.getenv("YUXI_TEST_KB_NAME", "single_file_import_test_kb")
 
 SUCCESS_STATUSES = {"indexed", "done"}
