@@ -194,6 +194,24 @@ class PostgresManager(metaclass=SingletonMeta):
             "CREATE INDEX IF NOT EXISTS idx_gre_agent_id ON grounded_retry_events(agent_id)",
             "CREATE INDEX IF NOT EXISTS idx_gre_grounded ON grounded_retry_events(grounded)",
             """
+            CREATE TABLE IF NOT EXISTS route_logs (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(64) NOT NULL,
+                agent_id VARCHAR(64),
+                thread_id VARCHAR(64),
+                query_text TEXT,
+                status VARCHAR(32) DEFAULT 'ok',
+                candidate_count INTEGER DEFAULT 0,
+                selected_db_ids JSONB,
+                selected_db_names JSONB,
+                top_score DOUBLE PRECISION,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_route_logs_created_at ON route_logs(created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_route_logs_agent_id ON route_logs(agent_id)",
+            "CREATE INDEX IF NOT EXISTS idx_route_logs_status ON route_logs(status)",
+            """
             CREATE TABLE IF NOT EXISTS kb_agent_bindings (
                 id SERIAL PRIMARY KEY,
                 kb_id VARCHAR(100) NOT NULL,

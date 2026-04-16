@@ -567,6 +567,39 @@ class GroundedRetryEvent(Base):
         }
 
 
+class RouteLog(Base):
+    """跨知识库路由日志"""
+
+    __tablename__ = "route_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    agent_id = Column(String(64), nullable=True, index=True)
+    thread_id = Column(String(64), nullable=True, index=True)
+    query_text = Column(Text, nullable=True)
+    status = Column(String(32), nullable=False, default="ok", index=True)
+    candidate_count = Column(Integer, nullable=False, default=0)
+    selected_db_ids = Column(JSON, nullable=True)
+    selected_db_names = Column(JSON, nullable=True)
+    top_score = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=utc_now_naive, index=True)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "agent_id": self.agent_id,
+            "thread_id": self.thread_id,
+            "query_text": self.query_text,
+            "status": self.status,
+            "candidate_count": self.candidate_count,
+            "selected_db_ids": self.selected_db_ids or [],
+            "selected_db_names": self.selected_db_names or [],
+            "top_score": self.top_score,
+            "created_at": format_utc_datetime(self.created_at),
+        }
+
+
 class KBDepartmentRelation(Base):
     """知识库-部门关联表（多对多）"""
 

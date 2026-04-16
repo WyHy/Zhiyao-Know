@@ -131,6 +131,16 @@ class GroundedQualityStats(BaseModel):
     retry_per_low_grounded: float
 
 
+class RouteQualityStats(BaseModel):
+    days: int
+    total_route_events: int
+    ok_events: int
+    insufficient_events: int
+    avg_candidate_count: float
+    avg_top_score: float
+    top_hit_kbs: list[dict]
+
+
 # =============================================================================
 # Conversation Management - 对话管理
 # =============================================================================
@@ -707,6 +717,62 @@ async def get_grounded_quality_stats(
         logger.error(f"Error getting grounded quality stats: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to get grounded quality stats: {str(e)}")
+
+
+@dashboard.get("/stats/route-quality", response_model=RouteQualityStats)
+async def get_route_quality_stats(
+    days: int = 7,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_admin_user),
+):
+    from src.storage.postgres.models_business import RouteLog
+
+    try:
+        _ = current_user
+        days = max(1, min(90, int(days)))
+        start_time = datetime.utcnow() - timedelta(days=days)
+
+        rows = (
+            await db.execute(
+                select(
+                    RouteLog.status,
+                    RouteLog.candidate_count,
+                    RouteLog.selected_db_names,
+                    RouteLog.top_score,
+                ).where(RouteLog.created_at >= start_time)
+            )
+        ).all()
+
+        total = len(rows)
+        ok_events = sum(1 for r in rows if (r[0] or "") == "ok")
+        insufficient_events = sum(1 for r in rows if (r[0] or "") == "insufficient_evidence")
+        avg_candidate_count = round(sum((r[1] or 0) for r in rows) / total, 4) if total else 0.0
+
+        top_scores = [float(r[3]) for r in rows if isinstance(r[3], (int, float))]
+        avg_top_score = round(sum(top_scores) / len(top_scores), 4) if top_scores else 0.0
+
+        kb_counter: dict[str, int] = {}
+        for r in rows:
+            names = r[2] if isinstance(r[2], list) else []
+            for name in names:
+                if isinstance(name, str) and name:
+                    kb_counter[name] = kb_counter.get(name, 0) + 1
+
+        top_hit_kbs = [{"name": name, "count": count} for name, count in sorted(kb_counter.items(), key=lambda x: x[1], reverse=True)[:10]]
+
+        return RouteQualityStats(
+            days=days,
+            total_route_events=total,
+            ok_events=ok_events,
+            insufficient_events=insufficient_events,
+            avg_candidate_count=avg_candidate_count,
+            avg_top_score=avg_top_score,
+            top_hit_kbs=top_hit_kbs,
+        )
+    except Exception as e:
+        logger.error(f"Error getting route quality stats: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to get route quality stats: {str(e)}")
 
 
 # =============================================================================

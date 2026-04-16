@@ -86,6 +86,47 @@ def _extract_cross_kb_evidence_chunks(messages: list) -> list[dict]:
     return chunks
 
 
+def _extract_cross_kb_route_snapshot(messages: list) -> dict | None:
+    latest: dict | None = None
+    for msg in messages or []:
+        msg_type = getattr(msg, "type", None)
+        if isinstance(msg, dict):
+            msg_type = msg.get("type") or msg.get("role") or msg_type
+            content = msg.get("content")
+        else:
+            content = getattr(msg, "content", None)
+
+        if str(msg_type) != "tool":
+            continue
+
+        payload = content
+        if isinstance(content, str):
+            try:
+                payload = json.loads(content)
+            except Exception:
+                continue
+        if not isinstance(payload, dict) or "candidates" not in payload:
+            continue
+
+        candidates = payload.get("candidates") if isinstance(payload.get("candidates"), list) else []
+        selected_db_ids = [c.get("db_id") for c in candidates if isinstance(c, dict) and c.get("db_id")]
+        selected_db_names = [c.get("name") for c in candidates if isinstance(c, dict) and c.get("name")]
+        top_score = None
+        if candidates and isinstance(candidates[0], dict):
+            raw_top_score = candidates[0].get("score")
+            if isinstance(raw_top_score, (int, float)):
+                top_score = float(raw_top_score)
+
+        latest = {
+            "status": str(payload.get("status") or "ok"),
+            "candidate_count": len(candidates),
+            "selected_db_ids": selected_db_ids,
+            "selected_db_names": selected_db_names,
+            "top_score": top_score,
+        }
+    return latest
+
+
 def _normalize_reasoning_fields(msg_dict: dict) -> dict:
     """将不同模型返回的 reasoning 字段统一映射为 reasoning_content。"""
     if not isinstance(msg_dict, dict):
@@ -503,6 +544,26 @@ async def stream_agent_chat(
             graph = await agent.get_graph()
             state_for_grounded = await graph.aget_state(langgraph_config)
             values_for_grounded = getattr(state_for_grounded, "values", {}) if state_for_grounded else {}
+            route_snapshot = _extract_cross_kb_route_snapshot(values_for_grounded.get("messages", []))
+            if route_snapshot:
+                try:
+                    from src.storage.postgres.models_business import RouteLog
+
+                    db.add(
+                        RouteLog(
+                            user_id=user_id,
+                            agent_id=agent_id,
+                            thread_id=thread_id,
+                            query_text=query[:2000] if isinstance(query, str) else None,
+                            status=route_snapshot.get("status") or "ok",
+                            candidate_count=int(route_snapshot.get("candidate_count") or 0),
+                            selected_db_ids=route_snapshot.get("selected_db_ids") or [],
+                            selected_db_names=route_snapshot.get("selected_db_names") or [],
+                            top_score=route_snapshot.get("top_score"),
+                        )
+                    )
+                except Exception as route_log_error:
+                    logger.warning(f"Write route log failed: {route_log_error}")
             evidence_chunks = _extract_cross_kb_evidence_chunks(values_for_grounded.get("messages", []))
             if full_msg and getattr(full_msg, "content", None) and evidence_chunks:
                 grounded_report = claim_check(full_msg.content, evidence_chunks)
