@@ -148,6 +148,9 @@ export function useAgentStreamHandler({
         // 先标记流式结束，但保持消息显示直到历史记录加载完成
         if (threadState) {
           threadState.isStreaming = false
+          if (chunk.meta && typeof chunk.meta === 'object') {
+            threadState.latestRunMeta = { ...chunk.meta }
+          }
           if ((unref(supportsTodo) || unref(supportsFiles)) && threadState.agentState) {
             console.log(
               `[AgentState|Final] ${new Date().toLocaleTimeString()}.${new Date().getMilliseconds()}`,

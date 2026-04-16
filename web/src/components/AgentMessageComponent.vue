@@ -65,6 +65,14 @@
         <span v-else>{{ message.error_type || '未知错误' }}</span>
       </div>
 
+      <div v-if="groundedReport" class="grounded-hint" :class="groundedReport.grounded ? 'is-grounded' : 'is-ungrounded'">
+        <span class="grounded-title">{{ groundedReport.grounded ? '证据一致性：高' : '证据一致性：低' }}</span>
+        <span class="grounded-detail">支持率 {{ groundedReport.supportRatioText }}</span>
+        <span v-if="groundedReport.unsupportedCount > 0" class="grounded-detail">
+          未支持句 {{ groundedReport.unsupportedCount }} 条
+        </span>
+      </div>
+
       <div v-if="showToolCalls && validToolCalls && validToolCalls.length > 0" class="tool-calls-container">
         <div
           v-for="(toolCall, index) in validToolCalls"
@@ -341,6 +349,33 @@ const showThinkingOnly = computed(() => {
 
   return !!parsedData.value.reasoning_content && !parsedData.value.content
 })
+
+const groundedReport = computed(() => {
+  const directGrounded = props.message.grounded
+  const directSupportRatio = props.message.support_ratio
+  const directUnsupportedCount = props.message.unsupported_sentence_count
+  const extra = props.message.extra_metadata || {}
+
+  const grounded = directGrounded ?? extra.grounded
+  const supportRatioRaw = directSupportRatio ?? extra.support_ratio
+  const unsupportedCountRaw = directUnsupportedCount ?? extra.unsupported_sentence_count
+
+  if (grounded === undefined && supportRatioRaw === undefined) {
+    return null
+  }
+
+  const supportRatioNum = Number(supportRatioRaw)
+  const supportRatio = Number.isFinite(supportRatioNum) ? supportRatioNum : 0
+  const unsupportedCountNum = Number(unsupportedCountRaw)
+  const unsupportedCount = Number.isFinite(unsupportedCountNum) ? unsupportedCountNum : 0
+
+  return {
+    grounded: grounded === true,
+    supportRatio,
+    supportRatioText: `${(supportRatio * 100).toFixed(1)}%`,
+    unsupportedCount
+  }
+})
 </script>
 
 <style lang="less" scoped>
@@ -523,6 +558,38 @@ const showThinkingOnly = computed(() => {
     color: var(--color-error-500);
     span {
       line-height: 1.5;
+    }
+  }
+
+  .grounded-hint {
+    margin: 8px 0 12px 0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    line-height: 1.4;
+
+    &.is-grounded {
+      color: var(--color-success-700);
+      background: var(--color-success-50);
+      border-color: var(--color-success-100);
+    }
+
+    &.is-ungrounded {
+      color: var(--color-warning-700);
+      background: var(--color-warning-50);
+      border-color: var(--color-warning-100);
+    }
+
+    .grounded-title {
+      font-weight: 600;
+    }
+
+    .grounded-detail {
+      opacity: 0.9;
     }
   }
 

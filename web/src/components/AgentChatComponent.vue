@@ -351,12 +351,35 @@ const onGoingConvMessages = computed(() => {
   const threadState = currentThreadState.value
   if (!threadState || !threadState.onGoingConv) return []
 
-  const msgs = Object.values(threadState.onGoingConv.msgChunks).map(
-    MessageProcessor.mergeMessageChunk
+  const msgs = Object.values(threadState.onGoingConv.msgChunks).map(MessageProcessor.mergeMessageChunk)
+  if (msgs.length === 0) return []
+
+  const converted = MessageProcessor.convertToolResultToMessages(msgs).filter(
+    (msg) => msg.type !== 'tool'
   )
-  return msgs.length > 0
-    ? MessageProcessor.convertToolResultToMessages(msgs).filter((msg) => msg.type !== 'tool')
-    : []
+
+  const runMeta = threadState.latestRunMeta
+  if (runMeta && typeof runMeta === 'object') {
+    for (let i = converted.length - 1; i >= 0; i--) {
+      if (converted[i]?.type === 'ai') {
+        converted[i] = {
+          ...converted[i],
+          grounded: runMeta.grounded,
+          support_ratio: runMeta.support_ratio,
+          unsupported_sentence_count: runMeta.unsupported_sentence_count,
+          extra_metadata: {
+            ...(converted[i].extra_metadata || {}),
+            grounded: runMeta.grounded,
+            support_ratio: runMeta.support_ratio,
+            unsupported_sentence_count: runMeta.unsupported_sentence_count
+          }
+        }
+        break
+      }
+    }
+  }
+
+  return converted
 })
 
 const historyConversations = computed(() => {
@@ -416,7 +439,8 @@ const getThreadState = (threadId) => {
       isStreaming: false,
       streamAbortController: null,
       onGoingConv: createOnGoingConvState(),
-      agentState: null // 添加 agentState 字段
+      agentState: null, // 添加 agentState 字段
+      latestRunMeta: null
     }
   }
   return chatState.threadStates[threadId]
@@ -454,6 +478,7 @@ const resetOnGoingConv = (threadId = null) => {
 
       // 直接重置对话状态
       threadState.onGoingConv = createOnGoingConvState()
+      threadState.latestRunMeta = null
     }
   } else {
     // 如果没有当前线程，清理所有线程状态

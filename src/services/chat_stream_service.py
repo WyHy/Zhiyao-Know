@@ -201,6 +201,7 @@ async def save_messages_from_langgraph_state(
     thread_id: str,
     conv_repo: ConversationRepository,
     config_dict: dict,
+    assistant_meta_patch: dict | None = None,
 ) -> None:
     try:
         messages = await _get_langgraph_messages(agent_instance, config_dict)
@@ -208,16 +209,27 @@ async def save_messages_from_langgraph_state(
             return
 
         existing_ids = await _get_existing_message_ids(conv_repo, thread_id)
-
-        for msg in messages:
+        prepared_messages = []
+        for idx, msg in enumerate(messages):
             msg_dict = msg.model_dump() if hasattr(msg, "model_dump") else {}
             msg_dict = _normalize_reasoning_fields(msg_dict)
             msg_type = msg_dict.get("type", "unknown")
+            prepared_messages.append((idx, msg, msg_dict, msg_type))
 
+        saveable_ai_positions = [
+            idx
+            for idx, msg, _msg_dict, msg_type in prepared_messages
+            if msg_type == "ai" and getattr(msg, "id", None) not in existing_ids
+        ]
+        last_ai_position = saveable_ai_positions[-1] if saveable_ai_positions else None
+
+        for idx, msg, msg_dict, msg_type in prepared_messages:
             if msg_type == "human" or getattr(msg, "id", None) in existing_ids:
                 continue
 
             if msg_type == "ai":
+                if assistant_meta_patch and idx == last_ai_position:
+                    msg_dict = msg_dict | assistant_meta_patch
                 await _save_ai_message(conv_repo, thread_id, msg_dict)
             elif msg_type == "tool":
                 await _save_tool_message(conv_repo, msg_dict)
@@ -438,6 +450,7 @@ async def stream_agent_chat(
 
         full_msg = None
         accumulated_content = []
+        grounded_meta_patch: dict | None = None
         assistant_stream_message_id: str | None = None
         langgraph_config = {"configurable": {"thread_id": thread_id, "user_id": user_id}}
         async for msg, metadata in agent.stream_messages(messages, input_context=input_context):
@@ -496,6 +509,11 @@ async def stream_agent_chat(
                 meta["grounded"] = grounded_report.get("grounded")
                 meta["support_ratio"] = grounded_report.get("support_ratio")
                 meta["unsupported_sentence_count"] = len(grounded_report.get("unsupported_sentences", []))
+                grounded_meta_patch = {
+                    "grounded": meta.get("grounded"),
+                    "support_ratio": meta.get("support_ratio"),
+                    "unsupported_sentence_count": meta.get("unsupported_sentence_count"),
+                }
         except Exception as e:
             logger.warning(f"Post grounded check failed: {e}")
 
@@ -521,6 +539,7 @@ async def stream_agent_chat(
             thread_id=thread_id,
             conv_repo=conv_repo,
             config_dict=langgraph_config,
+            assistant_meta_patch=grounded_meta_patch,
         )
 
     except (asyncio.CancelledError, ConnectionError) as e:
