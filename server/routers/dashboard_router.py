@@ -7,6 +7,7 @@ Provides centralized dashboard APIs for monitoring system-wide statistics.
 """
 
 import traceback
+import os
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -143,6 +144,12 @@ class RouteQualityStats(BaseModel):
     avg_estimated_tokens: float
     avg_budget_utilization: float
     top_hit_kbs: list[dict]
+
+
+class TrustAlertsResponse(BaseModel):
+    days: int
+    sample_size: int
+    alerts: list[dict]
 
 
 # =============================================================================
@@ -792,6 +799,113 @@ async def get_route_quality_stats(
         logger.error(f"Error getting route quality stats: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to get route quality stats: {str(e)}")
+
+
+@dashboard.get("/stats/trust-alerts", response_model=TrustAlertsResponse)
+async def get_trust_alerts(
+    days: int = 7,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_admin_user),
+):
+    from src.storage.postgres.models_business import Message, RouteLog
+
+    try:
+        _ = current_user
+        days = max(1, min(90, int(days)))
+        start_time = datetime.utcnow() - timedelta(days=days)
+
+        grounded_low_rate_threshold = float(os.getenv("YUXI_ALERT_GROUNDED_LOW_RATE", "0.25"))
+        route_insufficient_rate_threshold = float(os.getenv("YUXI_ALERT_ROUTE_INSUFFICIENT_RATE", "0.3"))
+        route_budget_truncated_rate_threshold = float(os.getenv("YUXI_ALERT_ROUTE_BUDGET_TRUNCATED_RATE", "0.2"))
+        route_budget_utilization_threshold = float(os.getenv("YUXI_ALERT_ROUTE_BUDGET_UTILIZATION", "0.85"))
+        min_sample_size = int(os.getenv("YUXI_ALERT_MIN_SAMPLE_SIZE", "20"))
+
+        grounded_rows = (
+            await db.execute(
+                select(Message.extra_metadata).where(
+                    Message.role == "assistant",
+                    Message.created_at >= start_time,
+                )
+            )
+        ).all()
+        grounded_metas = [r[0] for r in grounded_rows if isinstance(r[0], dict)]
+        grounded_marked = [m for m in grounded_metas if "grounded" in m or "support_ratio" in m]
+        low_grounded = [m for m in grounded_marked if m.get("grounded") is False]
+        low_grounded_rate = (len(low_grounded) / len(grounded_marked)) if grounded_marked else 0.0
+
+        route_rows = (
+            await db.execute(
+                select(
+                    RouteLog.status,
+                    RouteLog.budget_truncated,
+                    RouteLog.estimated_tokens,
+                    RouteLog.max_tokens,
+                ).where(RouteLog.created_at >= start_time)
+            )
+        ).all()
+        route_total = len(route_rows)
+        route_insufficient = sum(1 for r in route_rows if (r[0] or "") == "insufficient_evidence")
+        route_insufficient_rate = (route_insufficient / route_total) if route_total else 0.0
+        route_budget_truncated = sum(1 for r in route_rows if r[1] is True)
+        route_budget_truncated_rate = (route_budget_truncated / route_total) if route_total else 0.0
+        budget_utils = [
+            float(r[2]) / float(r[3])
+            for r in route_rows
+            if isinstance(r[2], (int, float)) and isinstance(r[3], (int, float)) and float(r[3]) > 0
+        ]
+        avg_budget_utilization = (sum(budget_utils) / len(budget_utils)) if budget_utils else 0.0
+
+        alerts: list[dict[str, Any]] = []
+        if len(grounded_marked) >= min_sample_size and low_grounded_rate > grounded_low_rate_threshold:
+            alerts.append(
+                {
+                    "level": "warning",
+                    "code": "grounded_low_rate_high",
+                    "message": "低可信回答占比偏高，建议检查路由命中与引用质量。",
+                    "value": round(low_grounded_rate, 4),
+                    "threshold": grounded_low_rate_threshold,
+                }
+            )
+        if route_total >= min_sample_size and route_insufficient_rate > route_insufficient_rate_threshold:
+            alerts.append(
+                {
+                    "level": "warning",
+                    "code": "route_insufficient_rate_high",
+                    "message": "跨库路由证据不足比例偏高，建议优化知识库画像与候选召回。",
+                    "value": round(route_insufficient_rate, 4),
+                    "threshold": route_insufficient_rate_threshold,
+                }
+            )
+        if route_total >= min_sample_size and route_budget_truncated_rate > route_budget_truncated_rate_threshold:
+            alerts.append(
+                {
+                    "level": "warning",
+                    "code": "route_budget_truncated_rate_high",
+                    "message": "上下文预算截断比例偏高，建议降低候选库或分块长度。",
+                    "value": round(route_budget_truncated_rate, 4),
+                    "threshold": route_budget_truncated_rate_threshold,
+                }
+            )
+        if route_total >= min_sample_size and avg_budget_utilization > route_budget_utilization_threshold:
+            alerts.append(
+                {
+                    "level": "info",
+                    "code": "route_budget_utilization_high",
+                    "message": "平均预算占用较高，存在上下文爆炸风险。",
+                    "value": round(avg_budget_utilization, 4),
+                    "threshold": route_budget_utilization_threshold,
+                }
+            )
+
+        return TrustAlertsResponse(
+            days=days,
+            sample_size=max(len(grounded_marked), route_total),
+            alerts=alerts,
+        )
+    except Exception as e:
+        logger.error(f"Error getting trust alerts: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to get trust alerts: {str(e)}")
 
 
 # =============================================================================

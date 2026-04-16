@@ -52,6 +52,16 @@
           <span class="value">{{ topKbText }}</span>
         </div>
       </div>
+
+      <div class="metric-block">
+        <div class="metric-title">告警状态</div>
+        <div v-if="alertList.length === 0" class="alert-empty">当前无告警</div>
+        <div v-else class="alert-list">
+          <a-tag v-for="item in alertList" :key="item.code" :color="item.level === 'warning' ? 'orange' : 'blue'">
+            {{ item.message }}
+          </a-tag>
+        </div>
+      </div>
     </div>
   </a-card>
 </template>
@@ -69,6 +79,10 @@ const props = defineProps({
     default: null
   },
   routeStats: {
+    type: Object,
+    default: null
+  },
+  trustAlerts: {
     type: Object,
     default: null
   }
@@ -93,6 +107,11 @@ const topKbText = computed(() => {
     .slice(0, 3)
     .map((item) => `${item.name}(${item.count})`)
     .join(' / ')
+})
+
+const alertList = computed(() => {
+  const list = props.trustAlerts?.alerts
+  return Array.isArray(list) ? list : []
 })
 </script>
 
@@ -157,6 +176,17 @@ const topKbText = computed(() => {
     font-size: 12px;
     color: var(--gray-800);
   }
+}
+
+.alert-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.alert-empty {
+  font-size: 12px;
+  color: var(--gray-600);
 }
 
 @media (max-width: 768px) {

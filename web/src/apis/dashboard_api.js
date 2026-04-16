@@ -112,12 +112,21 @@ export const dashboardApi = {
   },
 
   /**
+   * 获取可信检索告警
+   * @param {number} days - 统计天数
+   * @returns {Promise<Object>}
+   */
+  getTrustAlerts: (days = 7) => {
+    return apiAdminGet(`/api/dashboard/stats/trust-alerts?days=${days}`)
+  },
+
+  /**
    * 批量获取所有统计数据（并行请求）
    * @returns {Promise<Object>} - 所有统计数据
    */
   getAllStats: async () => {
     try {
-      const [basicStats, userStats, toolStats, knowledgeStats, agentStats, groundedStats, routeStats] =
+      const [basicStats, userStats, toolStats, knowledgeStats, agentStats, groundedStats, routeStats, trustAlerts] =
         await Promise.all([
         apiAdminGet('/api/dashboard/stats'),
         apiAdminGet('/api/dashboard/stats/users'),
@@ -125,7 +134,8 @@ export const dashboardApi = {
         apiAdminGet('/api/dashboard/stats/knowledge'),
         apiAdminGet('/api/dashboard/stats/agents'),
         apiAdminGet('/api/dashboard/stats/grounded-quality?days=7'),
-        apiAdminGet('/api/dashboard/stats/route-quality?days=7')
+        apiAdminGet('/api/dashboard/stats/route-quality?days=7'),
+        apiAdminGet('/api/dashboard/stats/trust-alerts?days=7')
       ])
 
       return {
@@ -135,7 +145,8 @@ export const dashboardApi = {
         knowledge: knowledgeStats,
         agents: agentStats,
         grounded: groundedStats,
-        route: routeStats
+        route: routeStats,
+        trustAlerts
       }
     } catch (error) {
       console.error('批量获取统计数据失败:', error)

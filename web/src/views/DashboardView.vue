@@ -54,6 +54,7 @@
         <TrustStatsComponent
           :grounded-stats="allStatsData?.grounded"
           :route-stats="allStatsData?.route"
+          :trust-alerts="allStatsData?.trustAlerts"
           :loading="loading"
         />
       </div>
@@ -161,7 +162,8 @@ const allStatsData = ref({
   knowledge: null,
   agents: null,
   grounded: null,
-  route: null
+  route: null,
+  trustAlerts: null
 })
 
 // 过滤器
@@ -255,7 +257,8 @@ const loadAllStats = async () => {
       knowledge: response.knowledge,
       agents: response.agents,
       grounded: response.grounded,
-      route: response.route
+      route: response.route,
+      trustAlerts: response.trustAlerts
     }
 
     console.log('Dashboard 数据加载完成:', response)
