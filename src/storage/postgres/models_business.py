@@ -540,6 +540,33 @@ class TaskRecord(Base):
         return data
 
 
+class GroundedRetryEvent(Base):
+    """低可信回答重试事件"""
+
+    __tablename__ = "grounded_retry_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    agent_id = Column(String(64), nullable=True, index=True)
+    thread_id = Column(String(64), nullable=True, index=True)
+    message_id = Column(String(128), nullable=True, index=True)
+    grounded = Column(Boolean, nullable=True, index=True)
+    support_ratio = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=utc_now_naive, index=True)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "agent_id": self.agent_id,
+            "thread_id": self.thread_id,
+            "message_id": self.message_id,
+            "grounded": self.grounded,
+            "support_ratio": self.support_ratio,
+            "created_at": format_utc_datetime(self.created_at),
+        }
+
+
 class KBDepartmentRelation(Base):
     """知识库-部门关联表（多对多）"""
 

@@ -120,6 +120,17 @@ class ConversationDetailResponse(BaseModel):
     messages: list[dict]
 
 
+class GroundedQualityStats(BaseModel):
+    days: int
+    assistant_messages: int
+    grounded_marked_messages: int
+    low_grounded_messages: int
+    low_grounded_rate: float
+    avg_support_ratio: float
+    grounded_retry_events: int
+    retry_per_low_grounded: float
+
+
 # =============================================================================
 # Conversation Management - 对话管理
 # =============================================================================
@@ -631,6 +642,71 @@ async def get_dashboard_stats(
         logger.error(f"Error getting dashboard stats: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to get dashboard stats: {str(e)}")
+
+
+@dashboard.get("/stats/grounded-quality", response_model=GroundedQualityStats)
+async def get_grounded_quality_stats(
+    days: int = 7,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_admin_user),
+):
+    from src.storage.postgres.models_business import GroundedRetryEvent, Message
+
+    try:
+        _ = current_user
+        days = max(1, min(90, int(days)))
+        start_time = datetime.utcnow() - timedelta(days=days)
+
+        rows = (
+            await db.execute(
+                select(Message.extra_metadata).where(
+                    Message.role == "assistant",
+                    Message.created_at >= start_time,
+                )
+            )
+        ).all()
+        metas = [r[0] for r in rows if isinstance(r[0], dict)]
+
+        grounded_marked = [m for m in metas if "grounded" in m or "support_ratio" in m]
+        low_grounded = [m for m in grounded_marked if m.get("grounded") is False]
+        support_values = []
+        for m in grounded_marked:
+            raw = m.get("support_ratio")
+            if isinstance(raw, (int, float)):
+                support_values.append(float(raw))
+
+        retry_events = (
+            await db.execute(
+                select(func.count(GroundedRetryEvent.id)).where(
+                    GroundedRetryEvent.created_at >= start_time,
+                )
+            )
+        ).scalar() or 0
+
+        assistant_messages = len(rows)
+        grounded_marked_messages = len(grounded_marked)
+        low_grounded_messages = len(low_grounded)
+        low_grounded_rate = round(
+            (low_grounded_messages / grounded_marked_messages) if grounded_marked_messages else 0.0,
+            4,
+        )
+        avg_support_ratio = round(sum(support_values) / len(support_values), 4) if support_values else 0.0
+        retry_per_low_grounded = round((retry_events / low_grounded_messages) if low_grounded_messages else 0.0, 4)
+
+        return GroundedQualityStats(
+            days=days,
+            assistant_messages=assistant_messages,
+            grounded_marked_messages=grounded_marked_messages,
+            low_grounded_messages=low_grounded_messages,
+            low_grounded_rate=low_grounded_rate,
+            avg_support_ratio=avg_support_ratio,
+            grounded_retry_events=int(retry_events),
+            retry_per_low_grounded=retry_per_low_grounded,
+        )
+    except Exception as e:
+        logger.error(f"Error getting grounded quality stats: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to get grounded quality stats: {str(e)}")
 
 
 # =============================================================================

@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.storage.postgres.models_business import User
+from src.storage.postgres.models_business import GroundedRetryEvent, User
 from server.routers.auth_router import get_admin_user
 from server.utils.auth_middleware import get_db, get_required_user
 from src import config as conf
@@ -814,6 +814,7 @@ async def get_message_feedback(
 @chat.post("/telemetry/grounded-retry")
 async def report_grounded_retry(
     payload: GroundedRetryTelemetryRequest,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_required_user),
 ):
     logger.info(
@@ -824,6 +825,16 @@ async def report_grounded_retry(
         payload.message_id,
         payload.grounded,
         payload.support_ratio,
+    )
+    db.add(
+        GroundedRetryEvent(
+            user_id=str(current_user.id),
+            agent_id=payload.agent_id,
+            thread_id=payload.thread_id,
+            message_id=payload.message_id,
+            grounded=payload.grounded,
+            support_ratio=payload.support_ratio,
+        )
     )
     return {"success": True}
 

@@ -179,6 +179,21 @@ class PostgresManager(metaclass=SingletonMeta):
             "CREATE INDEX IF NOT EXISTS idx_er_started ON evaluation_results(started_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_erd_task ON evaluation_result_details(task_id)",
             """
+            CREATE TABLE IF NOT EXISTS grounded_retry_events (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(64) NOT NULL,
+                agent_id VARCHAR(64),
+                thread_id VARCHAR(64),
+                message_id VARCHAR(128),
+                grounded BOOLEAN,
+                support_ratio DOUBLE PRECISION,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_gre_created_at ON grounded_retry_events(created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_gre_agent_id ON grounded_retry_events(agent_id)",
+            "CREATE INDEX IF NOT EXISTS idx_gre_grounded ON grounded_retry_events(grounded)",
+            """
             CREATE TABLE IF NOT EXISTS kb_agent_bindings (
                 id SERIAL PRIMARY KEY,
                 kb_id VARCHAR(100) NOT NULL,
