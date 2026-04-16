@@ -328,6 +328,15 @@ def get_cross_kb_router_tool(db_names: list[str] | None = None) -> StructuredToo
         final_top_k: int = 8,
         max_context_tokens: int = 18000,
     ) -> Any:
+        context_window = int(os.getenv("YUXI_CHAT_CONTEXT_WINDOW", "32768"))
+        safe_budget_cap = max(1024, int(context_window * 0.6))
+        effective_max_context_tokens = min(max_context_tokens, safe_budget_cap)
+        if effective_max_context_tokens < max_context_tokens:
+            logger.info(
+                "Cross-kb context budget capped by context window: "
+                f"requested={max_context_tokens}, capped={effective_max_context_tokens}, context_window={context_window}"
+            )
+
         retrievers = knowledge_base.get_retrievers()
         all_name_to_id = {info["name"]: db_id for db_id, info in retrievers.items()}
         all_id_to_name = {db_id: info["name"] for db_id, info in retrievers.items()}
@@ -379,7 +388,7 @@ def get_cross_kb_router_tool(db_names: list[str] | None = None) -> StructuredToo
                     "original_count": 0,
                     "kept_count": 0,
                     "estimated_tokens": 0,
-                    "max_tokens": max_context_tokens,
+                    "max_tokens": effective_max_context_tokens,
                 },
                 "answer_guidance": "未检索到有效证据，请明确说明当前知识库暂无可支撑答案的依据，不要猜测。",
                 "fallback_answer": "当前在可访问知识库中未检索到可支撑结论的证据，建议补充更具体的关键词、文件名或业务范围后重试。",
@@ -387,7 +396,7 @@ def get_cross_kb_router_tool(db_names: list[str] | None = None) -> StructuredToo
 
         chunks = await federated_retrieve(query_text, candidate_db_ids, per_kb_top_k=per_kb_top_k)
         reranked = global_rerank(query_text, chunks, top_k=final_top_k)
-        budgeted, budget_meta = context_budget_guard(reranked, max_tokens=max_context_tokens)
+        budgeted, budget_meta = context_budget_guard(reranked, max_tokens=effective_max_context_tokens)
         citations = build_citations(budgeted)
         citation_indexed = [{"index": i + 1, **item} for i, item in enumerate(citations)]
         status = "ok" if citation_indexed else "insufficient_evidence"
