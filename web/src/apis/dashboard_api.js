@@ -94,17 +94,38 @@ export const dashboardApi = {
   },
 
   /**
+   * 获取 grounded 质量统计
+   * @param {number} days - 统计天数
+   * @returns {Promise<Object>}
+   */
+  getGroundedQualityStats: (days = 7) => {
+    return apiAdminGet(`/api/dashboard/stats/grounded-quality?days=${days}`)
+  },
+
+  /**
+   * 获取跨库路由质量统计
+   * @param {number} days - 统计天数
+   * @returns {Promise<Object>}
+   */
+  getRouteQualityStats: (days = 7) => {
+    return apiAdminGet(`/api/dashboard/stats/route-quality?days=${days}`)
+  },
+
+  /**
    * 批量获取所有统计数据（并行请求）
    * @returns {Promise<Object>} - 所有统计数据
    */
   getAllStats: async () => {
     try {
-      const [basicStats, userStats, toolStats, knowledgeStats, agentStats] = await Promise.all([
+      const [basicStats, userStats, toolStats, knowledgeStats, agentStats, groundedStats, routeStats] =
+        await Promise.all([
         apiAdminGet('/api/dashboard/stats'),
         apiAdminGet('/api/dashboard/stats/users'),
         apiAdminGet('/api/dashboard/stats/tools'),
         apiAdminGet('/api/dashboard/stats/knowledge'),
-        apiAdminGet('/api/dashboard/stats/agents')
+        apiAdminGet('/api/dashboard/stats/agents'),
+        apiAdminGet('/api/dashboard/stats/grounded-quality?days=7'),
+        apiAdminGet('/api/dashboard/stats/route-quality?days=7')
       ])
 
       return {
@@ -112,7 +133,9 @@ export const dashboardApi = {
         users: userStats,
         tools: toolStats,
         knowledge: knowledgeStats,
-        agents: agentStats
+        agents: agentStats,
+        grounded: groundedStats,
+        route: routeStats
       }
     } catch (error) {
       console.error('批量获取统计数据失败:', error)

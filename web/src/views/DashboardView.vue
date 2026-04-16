@@ -49,6 +49,15 @@
         />
       </div>
 
+      <!-- 可信检索监控 -->
+      <div class="grid-item trust-stats">
+        <TrustStatsComponent
+          :grounded-stats="allStatsData?.grounded"
+          :route-stats="allStatsData?.route"
+          :loading="loading"
+        />
+      </div>
+
       <!-- 对话记录 - 占据1x1网格 -->
       <div class="grid-item conversations">
         <a-card class="conversations-section" title="对话记录" :loading="loading">
@@ -139,6 +148,7 @@ import AgentStatsComponent from '@/components/dashboard/AgentStatsComponent.vue'
 import CallStatsComponent from '@/components/dashboard/CallStatsComponent.vue'
 import StatsOverviewComponent from '@/components/dashboard/StatsOverviewComponent.vue'
 import FeedbackModalComponent from '@/components/dashboard/FeedbackModalComponent.vue'
+import TrustStatsComponent from '@/components/dashboard/TrustStatsComponent.vue'
 
 // 组件引用
 const feedbackModal = ref(null)
@@ -149,7 +159,9 @@ const allStatsData = ref({
   users: null,
   tools: null,
   knowledge: null,
-  agents: null
+  agents: null,
+  grounded: null,
+  route: null
 })
 
 // 过滤器
@@ -241,7 +253,9 @@ const loadAllStats = async () => {
       users: response.users,
       tools: response.tools,
       knowledge: response.knowledge,
-      agents: response.agents
+      agents: response.agents,
+      grounded: response.grounded,
+      route: response.route
     }
 
     console.log('Dashboard 数据加载完成:', response)
@@ -423,9 +437,15 @@ onUnmounted(() => {
       min-height: 350px;
     }
 
-    &.conversations {
+    &.trust-stats {
       grid-column: 1 / 4;
       grid-row: 3 / 4;
+      min-height: 240px;
+    }
+
+    &.conversations {
+      grid-column: 1 / 4;
+      grid-row: 4 / 5;
       min-height: 300px;
     }
   }
@@ -618,9 +638,15 @@ onUnmounted(() => {
         min-height: 300px;
       }
 
-      &.conversations {
+      &.trust-stats {
         grid-column: 1 / 3;
         grid-row: 4 / 5;
+        min-height: 240px;
+      }
+
+      &.conversations {
+        grid-column: 1 / 3;
+        grid-row: 5 / 6;
         min-height: 300px;
       }
     }
@@ -642,6 +668,7 @@ onUnmounted(() => {
       &.user-stats,
       &.tool-stats,
       &.knowledge-stats,
+      &.trust-stats,
       &.conversations {
         grid-column: 1 / 2;
         grid-row: auto;
