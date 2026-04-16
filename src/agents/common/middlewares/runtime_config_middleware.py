@@ -18,6 +18,15 @@ CHINESE_OUTPUT_GUARD_PROMPT = (
     "若必须出现英文缩写或术语（如 API、SQL、HTTP、ID），请先写中文，再在括号内补充英文。"
 )
 
+GROUNDED_KB_GUARD_PROMPT = (
+    "【知识库回答约束】当问题涉及事实、制度、流程、数据、时间、责任主体时：\n"
+    "1) 必须先调用知识库工具检索证据，优先使用“跨库路由检索”再决定最终依据。\n"
+    "2) 仅允许基于工具返回的 chunks/citations 作答，禁止编造文档、条款、页码、时间或结论。\n"
+    "3) 每条关键结论后添加引用标记，如 [来源1]、[来源2]，并与 citations 编号对应。\n"
+    "4) 若证据不足或冲突，必须明确说“当前知识库证据不足/证据冲突，无法确认”，不要猜测补全。\n"
+    "5) 回答优先给出结论，再给出证据要点与来源编号。"
+)
+
 
 def _is_system_like_role(role: Any) -> bool:
     if role is None:
@@ -249,6 +258,17 @@ def _estimate_messages_tokens(messages: list[Any]) -> int:
     return sum(_estimate_text_tokens(_message_to_token_text(msg)) for msg in messages)
 
 
+def _has_knowledge_tools(tools: list[Any]) -> bool:
+    for tool in tools or []:
+        if getattr(tool, "name", None) == "跨库路由检索":
+            return True
+        metadata = getattr(tool, "metadata", None) or {}
+        tags = metadata.get("tag", [])
+        if isinstance(tags, list) and "knowledgebase" in tags:
+            return True
+    return False
+
+
 def _get_input_token_budget() -> int:
     context_window = int(os.getenv("YUXI_CHAT_CONTEXT_WINDOW", "16384"))
     input_ratio = float(os.getenv("YUXI_CHAT_INPUT_TOKEN_RATIO", "0.9"))
@@ -385,6 +405,8 @@ class RuntimeConfigMiddleware(AgentMiddleware):
 
         if not any("【语言约束】" in c for c in merged_system_contents):
             _append_system_content(CHINESE_OUTPUT_GUARD_PROMPT)
+        if _has_knowledge_tools(enabled_tools) and not any("【知识库回答约束】" in c for c in merged_system_contents):
+            _append_system_content(GROUNDED_KB_GUARD_PROMPT)
 
         merged_system_message = (
             [{"role": "system", "content": "\n\n".join(merged_system_contents)}]

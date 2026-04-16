@@ -339,9 +339,11 @@ def get_cross_kb_router_tool(db_names: list[str] | None = None) -> StructuredToo
         candidate_db_ids = [c["db_id"] for c in candidates[: max(1, top_n_kb)] if c.get("db_id")]
         if not candidate_db_ids:
             return {
+                "status": "insufficient_evidence",
                 "candidates": [],
                 "chunks": [],
                 "citations": [],
+                "citation_indexed": [],
                 "budget_meta": {
                     "truncated": False,
                     "original_count": 0,
@@ -349,17 +351,27 @@ def get_cross_kb_router_tool(db_names: list[str] | None = None) -> StructuredToo
                     "estimated_tokens": 0,
                     "max_tokens": max_context_tokens,
                 },
+                "answer_guidance": "未检索到有效证据，请明确说明当前知识库暂无可支撑答案的依据，不要猜测。",
             }
 
         chunks = await federated_retrieve(query_text, candidate_db_ids, per_kb_top_k=per_kb_top_k)
         reranked = global_rerank(query_text, chunks, top_k=final_top_k)
         budgeted, budget_meta = context_budget_guard(reranked, max_tokens=max_context_tokens)
         citations = build_citations(budgeted)
+        citation_indexed = [{"index": i + 1, **item} for i, item in enumerate(citations)]
+        status = "ok" if citation_indexed else "insufficient_evidence"
         return {
+            "status": status,
             "candidates": candidates,
             "chunks": budgeted,
             "citations": citations,
+            "citation_indexed": citation_indexed,
             "budget_meta": budget_meta,
+            "answer_guidance": (
+                "回答事实结论时仅可使用 citations/citation_indexed 中的证据。"
+                "每条关键结论后使用 [来源n] 标注对应证据编号。"
+                "若证据不足或冲突，请明确说明而不是补全猜测。"
+            ),
         }
 
     return StructuredTool.from_function(
