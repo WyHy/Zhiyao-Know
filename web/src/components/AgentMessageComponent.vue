@@ -71,6 +71,14 @@
         <span v-if="groundedReport.unsupportedCount > 0" class="grounded-detail">
           未支持句 {{ groundedReport.unsupportedCount }} 条
         </span>
+        <button
+          v-if="!groundedReport.grounded"
+          class="grounded-retry-btn"
+          type="button"
+          @click="emit('retryGrounded')"
+        >
+          重新检索再答
+        </button>
       </div>
 
       <div v-if="showToolCalls && validToolCalls && validToolCalls.length > 0" class="tool-calls-container">
@@ -169,7 +177,7 @@ const props = defineProps({
 
 const editorRef = ref()
 
-const emit = defineEmits(['retry', 'retryStoppedMessage', 'openRefs'])
+const emit = defineEmits(['retry', 'retryStoppedMessage', 'openRefs', 'retryGrounded'])
 
 // 复制状态
 const isCopied = ref(false)
@@ -590,6 +598,18 @@ const groundedReport = computed(() => {
 
     .grounded-detail {
       opacity: 0.9;
+    }
+
+    .grounded-retry-btn {
+      margin-left: 2px;
+      padding: 3px 8px;
+      border: 1px solid currentColor;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.2;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
     }
   }
 

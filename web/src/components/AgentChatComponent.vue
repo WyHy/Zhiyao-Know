@@ -88,6 +88,7 @@
                 "
                 :show-refs="showMsgRefs(message)"
                 @retry="retryMessage(message)"
+                @retry-grounded="retryGroundedMessage(conv, msgIndex)"
               >
               </AgentMessageComponent>
               <!-- 显示对话最后一个消息使用的模型 -->
@@ -957,6 +958,29 @@ const handleExampleClick = (questionText) => {
   nextTick(() => {
     handleSendMessage()
   })
+}
+
+const retryGroundedMessage = async (conv, msgIndex) => {
+  if (isProcessing.value) return
+  const messages = conv?.messages || []
+  let questionText = ''
+
+  for (let i = Number(msgIndex) - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg?.type === 'human' && typeof msg?.content === 'string' && msg.content.trim()) {
+      questionText = msg.content.trim()
+      break
+    }
+  }
+
+  if (!questionText) {
+    message.warning('未找到可重试的问题文本')
+    return
+  }
+
+  userInput.value = questionText
+  await nextTick()
+  await handleSendMessage()
 }
 
 const buildExportPayload = () => {
