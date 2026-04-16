@@ -47,6 +47,20 @@ class BaseContext:
         metadata={"name": "部门ID", "configurable": False, "description": "用来唯一标识一个部门"},
     )
 
+    user_role: str = field(
+        default="user",
+        metadata={"name": "用户角色", "configurable": False, "description": "运行时注入，控制知识库路由权限边界"},
+    )
+
+    accessible_knowledges: list[str] = field(
+        default_factory=list,
+        metadata={
+            "name": "可访问知识库",
+            "configurable": False,
+            "description": "运行时注入，表示当前用户可访问的知识库名称列表",
+        },
+    )
+
     system_prompt: Annotated[str, {"__template_metadata__": {"kind": "prompt"}}] = field(
         default=(
             "你是一个有帮助的中文助手。"

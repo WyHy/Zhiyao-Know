@@ -342,6 +342,7 @@ async def stream_agent_chat(
         "user_id": user_id,
         "thread_id": thread_id,
         "department_id": department_id,
+        "user_role": current_user.role,
         "agent_config_id": agent_config_id,
         "agent_config": agent_config,
     }
@@ -392,10 +393,19 @@ async def stream_agent_chat(
                 if kb_name not in filtered_knowledge_names:
                     filtered_knowledge_names.append(kb_name)
             input_context["agent_config"]["knowledges"] = filtered_knowledge_names
+            input_context["accessible_knowledges"] = sorted(accessible_kb_names)
         else:
             agent_only_kb_names = await KBAgentBindingService().list_agent_only_kb_names_for_agent(agent_id)
             if agent_only_kb_names:
                 input_context["agent_config"]["knowledges"] = agent_only_kb_names
+            user_info = {"role": current_user.role, "user_id": current_user.id, "department_id": department_id}
+            accessible_databases = await knowledge_base.get_databases_by_user(user_info)
+            accessible_kb_names = {
+                db.get("name")
+                for db in accessible_databases.get("databases", [])
+                if isinstance(db, dict) and db.get("name")
+            }
+            input_context["accessible_knowledges"] = sorted(accessible_kb_names)
 
         full_msg = None
         accumulated_content = []
@@ -591,6 +601,7 @@ async def stream_agent_resume(
         "user_id": user_id,
         "thread_id": thread_id,
         "department_id": department_id,
+        "user_role": current_user.role,
         "agent_config_id": agent_config_id,
         "agent_config": (config_item.config_json or {}).get("context", config_item.config_json or {}),
     }
@@ -611,6 +622,7 @@ async def stream_agent_resume(
         for kb_name in agent_only_kb_names:
             if kb_name not in input_context["agent_config"]["knowledges"]:
                 input_context["agent_config"]["knowledges"].append(kb_name)
+        input_context["accessible_knowledges"] = sorted(accessible_kb_names)
     except Exception as e:
         logger.warning(f"Failed to apply bound knowledge filtering during resume: {e}")
 

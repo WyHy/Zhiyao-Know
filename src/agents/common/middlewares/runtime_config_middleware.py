@@ -8,7 +8,7 @@ from typing import Any
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 
 from src.agents.common import load_chat_model
-from src.agents.common.tools import get_kb_based_tools, get_buildin_tools
+from src.agents.common.tools import get_buildin_tools, get_cross_kb_router_tool, get_kb_based_tools
 from src.services.mcp_service import get_enabled_mcp_tools
 from src.utils.logging_config import logger
 
@@ -508,6 +508,10 @@ class RuntimeConfigMiddleware(AgentMiddleware):
         if context.knowledges:
             kb_tools = get_kb_based_tools(db_names=context.knowledges)
             selected_tools.extend(kb_tools)
+
+        # 2.1 跨库路由检索工具
+        route_scope = list(getattr(context, "accessible_knowledges", []) or context.knowledges or [])
+        selected_tools.append(get_cross_kb_router_tool(route_scope or None))
 
         # 3. MCP 工具（使用统一入口，自动过滤 disabled_tools）
         if context.mcps:

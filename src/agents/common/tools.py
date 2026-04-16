@@ -11,6 +11,8 @@ from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
 from src import config, graph_base, knowledge_base
+from src.services.grounded_answer_service import build_citations, context_budget_guard, federated_retrieve, global_rerank
+from src.services.kb_router_service import quick_verify_candidates, route_candidate_kbs
 from src.services.mcp_service import get_enabled_mcp_tools
 from src.storage.minio import aupload_file_to_minio
 from src.utils import logger
@@ -169,6 +171,14 @@ class CommonKnowledgeRetriever(KnowledgeRetrieverModel):
     file_name: str = Field(description="限定文件名称，当操作类型为 'search' 时，可以指定文件名称，支持模糊匹配")
 
 
+class CrossKBRetrieverModel(BaseModel):
+    query_text: str = Field(description="用于跨知识库检索的查询语句，建议是语义完整的一句话。")
+    top_n_kb: int = Field(default=4, ge=1, le=10, description="候选知识库数量上限。")
+    per_kb_top_k: int = Field(default=12, ge=1, le=30, description="每个候选知识库检索条数。")
+    final_top_k: int = Field(default=8, ge=1, le=20, description="跨库全局重排后保留条数。")
+    max_context_tokens: int = Field(default=18000, ge=512, le=30000, description="证据上下文预算 token。")
+
+
 def get_kb_based_tools(db_names: list[str] | None = None) -> list:
     """获取所有知识库基于的工具"""
     # 获取所有知识库
@@ -289,6 +299,81 @@ def get_kb_based_tools(db_names: list[str] | None = None) -> list:
     return kb_tools
 
 
+def get_cross_kb_router_tool(db_names: list[str] | None = None) -> StructuredTool:
+    """
+    生成跨知识库路由检索工具。
+    db_names 作为权限边界/范围提示，仅在该列表内做候选路由。
+    """
+
+    async def _cross_kb_router(
+        query_text: str,
+        top_n_kb: int = 4,
+        per_kb_top_k: int = 12,
+        final_top_k: int = 8,
+        max_context_tokens: int = 18000,
+    ) -> Any:
+        retrievers = knowledge_base.get_retrievers()
+        all_name_to_id = {info["name"]: db_id for db_id, info in retrievers.items()}
+        all_id_to_name = {db_id: info["name"] for db_id, info in retrievers.items()}
+        allowed_db_ids: set[str] | None = None
+        if db_names:
+            allowed_db_ids = {all_name_to_id[name] for name in db_names if name in all_name_to_id}
+
+        if allowed_db_ids is not None:
+            candidates = [
+                {
+                    "db_id": db_id,
+                    "name": all_id_to_name.get(db_id, db_id),
+                    "description": "",
+                    "score": 0.0,
+                    "profile_score": 0.0,
+                    "quick_recall_score": 0.0,
+                }
+                for db_id in allowed_db_ids
+            ]
+        else:
+            user_stub = {"role": "user", "user_id": None, "department_id": None}
+            candidates = await route_candidate_kbs(query_text, user_stub, top_n=max(1, top_n_kb))
+
+        candidates = await quick_verify_candidates(query_text, candidates, per_kb_top_k=min(8, per_kb_top_k))
+        candidate_db_ids = [c["db_id"] for c in candidates[: max(1, top_n_kb)] if c.get("db_id")]
+        if not candidate_db_ids:
+            return {
+                "candidates": [],
+                "chunks": [],
+                "citations": [],
+                "budget_meta": {
+                    "truncated": False,
+                    "original_count": 0,
+                    "kept_count": 0,
+                    "estimated_tokens": 0,
+                    "max_tokens": max_context_tokens,
+                },
+            }
+
+        chunks = await federated_retrieve(query_text, candidate_db_ids, per_kb_top_k=per_kb_top_k)
+        reranked = global_rerank(query_text, chunks, top_k=final_top_k)
+        budgeted, budget_meta = context_budget_guard(reranked, max_tokens=max_context_tokens)
+        citations = build_citations(budgeted)
+        return {
+            "candidates": candidates,
+            "chunks": budgeted,
+            "citations": citations,
+            "budget_meta": budget_meta,
+        }
+
+    return StructuredTool.from_function(
+        coroutine=_cross_kb_router,
+        name="跨库路由检索",
+        description=(
+            "跨知识库路由检索工具。先自动选择最相关知识库，再做跨库召回、重排与上下文预算裁剪。"
+            "适用于用户问题不确定属于哪个知识库的场景。"
+        ),
+        args_schema=CrossKBRetrieverModel,
+        metadata={"name": "跨库路由检索", "tag": ["knowledgebase", "router"]},
+    )
+
+
 def gen_tool_info(tools) -> list[dict[str, Any]]:
     """获取所有工具的信息（用于前端展示）"""
     tools_info = []
@@ -380,6 +465,10 @@ async def get_tools_from_context(context, extra_tools=None) -> list:
     if context.knowledges:
         kb_tools = get_kb_based_tools(db_names=context.knowledges)
         selected_tools.extend(kb_tools)
+
+    # 2.1 跨库路由检索工具（默认启用，范围优先使用用户可访问知识库）
+    route_scope = list(getattr(context, "accessible_knowledges", []) or context.knowledges or [])
+    selected_tools.append(get_cross_kb_router_tool(route_scope or None))
 
     # 3. MCP 工具（使用统一入口，自动过滤 disabled_tools）
     if context.mcps:
