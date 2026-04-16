@@ -19,6 +19,7 @@ from src.knowledge.utils import calculate_content_hash
 from src.models.embed import test_all_embedding_models_status, test_embedding_model_status
 from src.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from src.repositories.task_repository import TaskRepository
+from src.services.kb_profile_service import refresh_profile_incremental
 from src.storage.postgres.models_business import User
 from src.storage.minio.client import StorageError, aupload_file_to_minio, get_minio_client
 from src.utils.datetime_utils import utc_now_naive
@@ -535,6 +536,23 @@ async def add_documents(
             "submitted": len(processed_items),
             "failed": failed_count,
         }
+
+        # 文档处理成功后增量刷新知识库画像（失败不影响主任务）
+        try:
+            success_statuses = {"parsed", "indexed", "done"}
+            success_file_ids = []
+            for item in processed_items:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("error"):
+                    continue
+                if item.get("status") in success_statuses and item.get("file_id"):
+                    success_file_ids.append(str(item["file_id"]))
+            if success_file_ids:
+                await refresh_profile_incremental(db_id, file_ids=list(set(success_file_ids)))
+        except Exception as e:
+            logger.warning(f"Refresh kb profile after ingest failed for {db_id}: {e}")
+
         message = f"{item_type}处理完成，失败 {failed_count} 个" if failed_count else f"{item_type}处理完成"
         await context.set_result(summary | {"items": processed_items})
         await context.set_progress(100.0, message)

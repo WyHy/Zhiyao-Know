@@ -409,6 +409,15 @@ class KnowledgeBaseManager:
 
         logger.info(f"Created {kb_type} database: {database_name} ({db_id}) with {kwargs}")
         db_info["share_config"] = share_config
+
+        # 新建知识库后立即生成首版画像，确保路由可用
+        try:
+            from src.services.kb_profile_service import build_profile
+
+            await build_profile(db_id, force=True)
+        except Exception as e:
+            logger.warning(f"Build initial kb profile failed for {db_id}: {e}")
+
         return db_info
 
     async def delete_database(self, db_id: str) -> dict:

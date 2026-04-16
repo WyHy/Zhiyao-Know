@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import select
 
 from src import knowledge_base
+from src.services.kb_profile_service import refresh_profile_incremental
 from src.storage.postgres.manager import pg_manager
 from src.storage.postgres.models_business import TaskRecord
 from src.utils import logger
@@ -251,6 +252,7 @@ async def _run_task(task: dict[str, Any]) -> None:
     payload = task["payload"] if isinstance(task["payload"], dict) else {}
 
     try:
+        db_id = str(payload.get("db_id") or "")
         if task_type == "knowledge_parse":
             result = await _run_parse(task_id, payload)
             failed_count = len([item for item in result.get("items", []) if "error" in item])
@@ -265,6 +267,28 @@ async def _run_task(task: dict[str, Any]) -> None:
             message = f"重解析并入库完成，失败 {failed_count} 个"
         else:
             raise RuntimeError(f"unsupported knowledge task type: {task_type}")
+
+        # 成功处理后增量刷新画像（失败不影响任务主流程）
+        if db_id:
+            try:
+                success_statuses = {"parsed", "indexed", "done"}
+                success_file_ids = []
+                for item in result.get("items", []):
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("error"):
+                        continue
+                    if item.get("status") in success_statuses and item.get("file_id"):
+                        success_file_ids.append(str(item["file_id"]))
+                if success_file_ids:
+                    await refresh_profile_incremental(db_id, file_ids=list(set(success_file_ids)))
+            except Exception as profile_err:
+                logger.warning(
+                    "event=kb_profile_refresh_failed db_id={} task_type={} error={}",
+                    db_id,
+                    task_type,
+                    str(profile_err),
+                )
 
         await _update_task(
             task_id,
