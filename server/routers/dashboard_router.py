@@ -138,6 +138,10 @@ class RouteQualityStats(BaseModel):
     insufficient_events: int
     avg_candidate_count: float
     avg_top_score: float
+    budget_truncated_events: int
+    budget_truncated_rate: float
+    avg_estimated_tokens: float
+    avg_budget_utilization: float
     top_hit_kbs: list[dict]
 
 
@@ -739,6 +743,9 @@ async def get_route_quality_stats(
                     RouteLog.candidate_count,
                     RouteLog.selected_db_names,
                     RouteLog.top_score,
+                    RouteLog.budget_truncated,
+                    RouteLog.estimated_tokens,
+                    RouteLog.max_tokens,
                 ).where(RouteLog.created_at >= start_time)
             )
         ).all()
@@ -750,6 +757,14 @@ async def get_route_quality_stats(
 
         top_scores = [float(r[3]) for r in rows if isinstance(r[3], (int, float))]
         avg_top_score = round(sum(top_scores) / len(top_scores), 4) if top_scores else 0.0
+        budget_truncated_events = sum(1 for r in rows if r[4] is True)
+        budget_truncated_rate = round((budget_truncated_events / total), 4) if total else 0.0
+        estimated_tokens = [float(r[5]) for r in rows if isinstance(r[5], (int, float))]
+        avg_estimated_tokens = round(sum(estimated_tokens) / len(estimated_tokens), 2) if estimated_tokens else 0.0
+        budget_utilizations = [
+            float(r[5]) / float(r[6]) for r in rows if isinstance(r[5], (int, float)) and isinstance(r[6], (int, float)) and float(r[6]) > 0
+        ]
+        avg_budget_utilization = round(sum(budget_utilizations) / len(budget_utilizations), 4) if budget_utilizations else 0.0
 
         kb_counter: dict[str, int] = {}
         for r in rows:
@@ -767,6 +782,10 @@ async def get_route_quality_stats(
             insufficient_events=insufficient_events,
             avg_candidate_count=avg_candidate_count,
             avg_top_score=avg_top_score,
+            budget_truncated_events=budget_truncated_events,
+            budget_truncated_rate=budget_truncated_rate,
+            avg_estimated_tokens=avg_estimated_tokens,
+            avg_budget_utilization=avg_budget_utilization,
             top_hit_kbs=top_hit_kbs,
         )
     except Exception as e:

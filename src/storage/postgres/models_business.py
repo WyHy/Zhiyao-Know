@@ -582,6 +582,11 @@ class RouteLog(Base):
     selected_db_ids = Column(JSON, nullable=True)
     selected_db_names = Column(JSON, nullable=True)
     top_score = Column(Float, nullable=True)
+    budget_truncated = Column(Boolean, nullable=True, index=True)
+    estimated_tokens = Column(Integer, nullable=True)
+    max_tokens = Column(Integer, nullable=True)
+    kept_chunks = Column(Integer, nullable=True)
+    original_chunks = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=utc_now_naive, index=True)
 
     def to_dict(self) -> dict[str, Any]:
@@ -596,6 +601,11 @@ class RouteLog(Base):
             "selected_db_ids": self.selected_db_ids or [],
             "selected_db_names": self.selected_db_names or [],
             "top_score": self.top_score,
+            "budget_truncated": self.budget_truncated,
+            "estimated_tokens": self.estimated_tokens,
+            "max_tokens": self.max_tokens,
+            "kept_chunks": self.kept_chunks,
+            "original_chunks": self.original_chunks,
             "created_at": format_utc_datetime(self.created_at),
         }
 

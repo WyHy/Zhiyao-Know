@@ -116,6 +116,10 @@ def _extract_cross_kb_route_snapshot(messages: list) -> dict | None:
             raw_top_score = candidates[0].get("score")
             if isinstance(raw_top_score, (int, float)):
                 top_score = float(raw_top_score)
+        budget_meta = payload.get("budget_meta") if isinstance(payload.get("budget_meta"), dict) else {}
+
+        def _safe_int(v):
+            return int(v) if isinstance(v, (int, float)) else None
 
         latest = {
             "status": str(payload.get("status") or "ok"),
@@ -123,6 +127,11 @@ def _extract_cross_kb_route_snapshot(messages: list) -> dict | None:
             "selected_db_ids": selected_db_ids,
             "selected_db_names": selected_db_names,
             "top_score": top_score,
+            "budget_truncated": bool(budget_meta.get("truncated")) if budget_meta else None,
+            "estimated_tokens": _safe_int(budget_meta.get("estimated_tokens")),
+            "max_tokens": _safe_int(budget_meta.get("max_tokens")),
+            "kept_chunks": _safe_int(budget_meta.get("kept_count")),
+            "original_chunks": _safe_int(budget_meta.get("original_count")),
         }
     return latest
 
@@ -560,6 +569,11 @@ async def stream_agent_chat(
                             selected_db_ids=route_snapshot.get("selected_db_ids") or [],
                             selected_db_names=route_snapshot.get("selected_db_names") or [],
                             top_score=route_snapshot.get("top_score"),
+                            budget_truncated=route_snapshot.get("budget_truncated"),
+                            estimated_tokens=route_snapshot.get("estimated_tokens"),
+                            max_tokens=route_snapshot.get("max_tokens"),
+                            kept_chunks=route_snapshot.get("kept_chunks"),
+                            original_chunks=route_snapshot.get("original_chunks"),
                         )
                     )
                 except Exception as route_log_error:

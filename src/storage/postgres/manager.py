@@ -193,6 +193,11 @@ class PostgresManager(metaclass=SingletonMeta):
             "CREATE INDEX IF NOT EXISTS idx_gre_created_at ON grounded_retry_events(created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_gre_agent_id ON grounded_retry_events(agent_id)",
             "CREATE INDEX IF NOT EXISTS idx_gre_grounded ON grounded_retry_events(grounded)",
+            "ALTER TABLE IF EXISTS route_logs ADD COLUMN IF NOT EXISTS budget_truncated BOOLEAN",
+            "ALTER TABLE IF EXISTS route_logs ADD COLUMN IF NOT EXISTS estimated_tokens INTEGER",
+            "ALTER TABLE IF EXISTS route_logs ADD COLUMN IF NOT EXISTS max_tokens INTEGER",
+            "ALTER TABLE IF EXISTS route_logs ADD COLUMN IF NOT EXISTS kept_chunks INTEGER",
+            "ALTER TABLE IF EXISTS route_logs ADD COLUMN IF NOT EXISTS original_chunks INTEGER",
             """
             CREATE TABLE IF NOT EXISTS route_logs (
                 id SERIAL PRIMARY KEY,
@@ -205,12 +210,18 @@ class PostgresManager(metaclass=SingletonMeta):
                 selected_db_ids JSONB,
                 selected_db_names JSONB,
                 top_score DOUBLE PRECISION,
+                budget_truncated BOOLEAN,
+                estimated_tokens INTEGER,
+                max_tokens INTEGER,
+                kept_chunks INTEGER,
+                original_chunks INTEGER,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
             """,
             "CREATE INDEX IF NOT EXISTS idx_route_logs_created_at ON route_logs(created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_route_logs_agent_id ON route_logs(agent_id)",
             "CREATE INDEX IF NOT EXISTS idx_route_logs_status ON route_logs(status)",
+            "CREATE INDEX IF NOT EXISTS idx_route_logs_budget_truncated ON route_logs(budget_truncated)",
             """
             CREATE TABLE IF NOT EXISTS kb_agent_bindings (
                 id SERIAL PRIMARY KEY,

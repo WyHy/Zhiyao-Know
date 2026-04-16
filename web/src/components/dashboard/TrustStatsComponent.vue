@@ -34,6 +34,18 @@
             <span class="label">平均候选库数</span>
             <span class="value">{{ toFixed(routeStats?.avg_candidate_count) }}</span>
           </div>
+          <div class="metric-item">
+            <span class="label">预算截断率</span>
+            <span class="value">{{ toPercent(routeStats?.budget_truncated_rate) }}</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">平均预算占用</span>
+            <span class="value">{{ toPercent(routeStats?.avg_budget_utilization) }}</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">平均估算Token</span>
+            <span class="value">{{ toFixed(routeStats?.avg_estimated_tokens) }}</span>
+          </div>
         </div>
         <div class="top-kb-line">
           <span class="label">Top 命中库</span>
