@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import traceback
 import uuid
 from typing import Annotated, Any
@@ -179,6 +180,21 @@ class CrossKBRetrieverModel(BaseModel):
     max_context_tokens: int = Field(default=18000, ge=512, le=30000, description="证据上下文预算 token。")
 
 
+_ROUTER_TOKEN_PATTERN = re.compile(r"[\u4e00-\u9fffA-Za-z0-9_]{2,24}")
+
+
+def _router_tokenize(text: str) -> set[str]:
+    return {t.lower() for t in _ROUTER_TOKEN_PATTERN.findall(text or "") if t}
+
+
+def _router_lexical_score(query_text: str, target_text: str) -> float:
+    q = _router_tokenize(query_text)
+    t = _router_tokenize(target_text)
+    if not q or not t:
+        return 0.0
+    return len(q & t) / max(1, len(q | t))
+
+
 def get_kb_based_tools(db_names: list[str] | None = None) -> list:
     """获取所有知识库基于的工具"""
     # 获取所有知识库
@@ -318,19 +334,33 @@ def get_cross_kb_router_tool(db_names: list[str] | None = None) -> StructuredToo
         allowed_db_ids: set[str] | None = None
         if db_names:
             allowed_db_ids = {all_name_to_id[name] for name in db_names if name in all_name_to_id}
+            if not allowed_db_ids:
+                logger.warning(
+                    "Cross-kb router scope names not found in retrievers; fallback to all available retrievers. "
+                    f"scope={db_names}"
+                )
+                allowed_db_ids = set(all_name_to_id.values()) if all_name_to_id else None
 
         if allowed_db_ids is not None:
-            candidates = [
-                {
-                    "db_id": db_id,
-                    "name": all_id_to_name.get(db_id, db_id),
-                    "description": "",
-                    "score": 0.0,
-                    "profile_score": 0.0,
-                    "quick_recall_score": 0.0,
-                }
-                for db_id in allowed_db_ids
-            ]
+            scoped_candidates = []
+            for db_id in allowed_db_ids:
+                info = retrievers.get(db_id, {})
+                name = info.get("name", all_id_to_name.get(db_id, db_id))
+                desc = info.get("description", "")
+                lexical = _router_lexical_score(query_text, f"{name} {desc}")
+                scoped_candidates.append(
+                    {
+                        "db_id": db_id,
+                        "name": name,
+                        "description": desc,
+                        "score": lexical,
+                        "profile_score": lexical,
+                        "quick_recall_score": 0.0,
+                    }
+                )
+            scoped_candidates.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+            # 在权限范围很大时先做轻量词匹配预筛，避免对全部知识库做快速召回
+            candidates = scoped_candidates[: max(1, min(len(scoped_candidates), top_n_kb * 3))]
         else:
             user_stub = {"role": "user", "user_id": None, "department_id": None}
             candidates = await route_candidate_kbs(query_text, user_stub, top_n=max(1, top_n_kb))
@@ -352,6 +382,7 @@ def get_cross_kb_router_tool(db_names: list[str] | None = None) -> StructuredToo
                     "max_tokens": max_context_tokens,
                 },
                 "answer_guidance": "未检索到有效证据，请明确说明当前知识库暂无可支撑答案的依据，不要猜测。",
+                "fallback_answer": "当前在可访问知识库中未检索到可支撑结论的证据，建议补充更具体的关键词、文件名或业务范围后重试。",
             }
 
         chunks = await federated_retrieve(query_text, candidate_db_ids, per_kb_top_k=per_kb_top_k)
@@ -360,6 +391,11 @@ def get_cross_kb_router_tool(db_names: list[str] | None = None) -> StructuredToo
         citations = build_citations(budgeted)
         citation_indexed = [{"index": i + 1, **item} for i, item in enumerate(citations)]
         status = "ok" if citation_indexed else "insufficient_evidence"
+        fallback_answer = (
+            ""
+            if status == "ok"
+            else "当前检索到的证据不足以支持明确结论，请补充问题细节或指定知识库范围。"
+        )
         return {
             "status": status,
             "candidates": candidates,
@@ -372,6 +408,7 @@ def get_cross_kb_router_tool(db_names: list[str] | None = None) -> StructuredToo
                 "每条关键结论后使用 [来源n] 标注对应证据编号。"
                 "若证据不足或冲突，请明确说明而不是补全猜测。"
             ),
+            "fallback_answer": fallback_answer,
         }
 
     return StructuredTool.from_function(
