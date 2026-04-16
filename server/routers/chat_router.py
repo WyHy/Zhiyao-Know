@@ -771,6 +771,14 @@ class MessageFeedbackResponse(BaseModel):
     created_at: str
 
 
+class GroundedRetryTelemetryRequest(BaseModel):
+    agent_id: str | None = None
+    thread_id: str | None = None
+    message_id: str | None = None
+    support_ratio: float | None = None
+    grounded: bool | None = None
+
+
 @chat.post("/message/{message_id}/feedback", response_model=MessageFeedbackResponse)
 async def submit_message_feedback(
     message_id: int,
@@ -801,6 +809,23 @@ async def get_message_feedback(
         db=db,
         current_user_id=str(current_user.id),
     )
+
+
+@chat.post("/telemetry/grounded-retry")
+async def report_grounded_retry(
+    payload: GroundedRetryTelemetryRequest,
+    current_user: User = Depends(get_required_user),
+):
+    logger.info(
+        "event=grounded_retry_clicked user_id={} agent_id={} thread_id={} message_id={} grounded={} support_ratio={}",
+        str(current_user.id),
+        payload.agent_id,
+        payload.thread_id,
+        payload.message_id,
+        payload.grounded,
+        payload.support_ratio,
+    )
+    return {"success": True}
 
 
 # =============================================================================

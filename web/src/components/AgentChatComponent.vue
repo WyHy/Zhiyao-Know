@@ -963,6 +963,7 @@ const handleExampleClick = (questionText) => {
 const retryGroundedMessage = async (conv, msgIndex) => {
   if (isProcessing.value) return
   const messages = conv?.messages || []
+  const targetMessage = messages?.[Number(msgIndex)] || {}
   let questionText = ''
 
   for (let i = Number(msgIndex) - 1; i >= 0; i--) {
@@ -976,6 +977,18 @@ const retryGroundedMessage = async (conv, msgIndex) => {
   if (!questionText) {
     message.warning('未找到可重试的问题文本')
     return
+  }
+
+  try {
+    await agentApi.reportGroundedRetry({
+      agent_id: currentAgentId.value || null,
+      thread_id: currentChatId.value || null,
+      message_id: targetMessage.id || null,
+      grounded: targetMessage.grounded ?? targetMessage?.extra_metadata?.grounded ?? null,
+      support_ratio: targetMessage.support_ratio ?? targetMessage?.extra_metadata?.support_ratio ?? null
+    })
+  } catch (e) {
+    console.warn('上报重试事件失败:', e)
   }
 
   userInput.value = questionText

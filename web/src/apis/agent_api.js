@@ -112,6 +112,13 @@ export const agentApi = {
   getMessageFeedback: (messageId) => apiGet(`/api/chat/message/${messageId}/feedback`),
 
   /**
+   * 上报低可信回答点击“重新检索再答”事件
+   * @param {Object} payload - 埋点信息
+   * @returns {Promise}
+   */
+  reportGroundedRetry: (payload) => apiPost('/api/chat/telemetry/grounded-retry', payload || {}),
+
+  /**
    * 获取模型提供商的模型列表
    * @param {string} provider - 模型提供商
    * @returns {Promise} - 模型列表

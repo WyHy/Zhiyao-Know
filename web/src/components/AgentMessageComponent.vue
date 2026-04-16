@@ -80,6 +80,9 @@
           重新检索再答
         </button>
       </div>
+      <div v-if="groundedReport && !groundedReport.grounded" class="grounded-guide">
+        建议补充：时间范围、设备/对象名称、业务场景，或直接指定知识库范围后重试。
+      </div>
 
       <div v-if="showToolCalls && validToolCalls && validToolCalls.length > 0" class="tool-calls-container">
         <div
@@ -611,6 +614,13 @@ const groundedReport = computed(() => {
       color: inherit;
       cursor: pointer;
     }
+  }
+
+  .grounded-guide {
+    margin: -4px 0 10px 0;
+    color: var(--gray-700);
+    font-size: 12px;
+    line-height: 1.5;
   }
 
   .status-info {
