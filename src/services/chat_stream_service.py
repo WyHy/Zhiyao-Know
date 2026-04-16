@@ -13,6 +13,7 @@ from src.agents import agent_manager
 from src.plugins.guard import content_guard
 from src.repositories.agent_config_repository import AgentConfigRepository
 from src.repositories.conversation_repository import ConversationRepository
+from src.services.grounded_answer_service import claim_check
 from src.services.kb_agent_binding_service import KBAgentBindingService
 from src.storage.postgres.manager import pg_manager
 from src.utils.logging_config import logger
@@ -55,6 +56,34 @@ async def _get_existing_message_ids(conv_repo: ConversationRepository, thread_id
         for msg in existing_messages
         if msg.extra_metadata and "id" in msg.extra_metadata and isinstance(msg.extra_metadata["id"], str)
     }
+
+
+def _extract_cross_kb_evidence_chunks(messages: list) -> list[dict]:
+    chunks: list[dict] = []
+    for msg in messages or []:
+        msg_type = getattr(msg, "type", None)
+        if isinstance(msg, dict):
+            msg_type = msg.get("type") or msg.get("role") or msg_type
+            content = msg.get("content")
+        else:
+            content = getattr(msg, "content", None)
+
+        if str(msg_type) != "tool":
+            continue
+
+        payload = content
+        if isinstance(content, str):
+            try:
+                payload = json.loads(content)
+            except Exception:
+                continue
+        if isinstance(payload, dict):
+            raw_chunks = payload.get("chunks")
+            if isinstance(raw_chunks, list):
+                for item in raw_chunks:
+                    if isinstance(item, dict) and item.get("content"):
+                        chunks.append(item)
+    return chunks
 
 
 def _normalize_reasoning_fields(msg_dict: dict) -> dict:
@@ -456,6 +485,19 @@ async def stream_agent_chat(
             meta["time_cost"] = asyncio.get_event_loop().time() - start_time
             yield make_chunk(status="interrupted", message="检测到敏感内容，已中断输出", meta=meta)
             return
+
+        try:
+            graph = await agent.get_graph()
+            state_for_grounded = await graph.aget_state(langgraph_config)
+            values_for_grounded = getattr(state_for_grounded, "values", {}) if state_for_grounded else {}
+            evidence_chunks = _extract_cross_kb_evidence_chunks(values_for_grounded.get("messages", []))
+            if full_msg and getattr(full_msg, "content", None) and evidence_chunks:
+                grounded_report = claim_check(full_msg.content, evidence_chunks)
+                meta["grounded"] = grounded_report.get("grounded")
+                meta["support_ratio"] = grounded_report.get("support_ratio")
+                meta["unsupported_sentence_count"] = len(grounded_report.get("unsupported_sentences", []))
+        except Exception as e:
+            logger.warning(f"Post grounded check failed: {e}")
 
         async for chunk in check_and_handle_interrupts(agent, langgraph_config, make_chunk, meta, thread_id):
             yield chunk
