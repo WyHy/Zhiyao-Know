@@ -9,6 +9,25 @@ from src import config
 from src.utils import logger
 
 
+def _get_env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _get_env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+CHAT_RETRY_ATTEMPTS = max(1, _get_env_int("YUXI_CHAT_RETRY_ATTEMPTS", 3))
+CHAT_RETRY_MIN_WAIT = max(0.0, _get_env_float("YUXI_CHAT_RETRY_MIN_WAIT", 1.0))
+CHAT_RETRY_MAX_WAIT = max(CHAT_RETRY_MIN_WAIT, _get_env_float("YUXI_CHAT_RETRY_MAX_WAIT", 10.0))
+
+
 def split_model_spec(model_spec, sep="/"):
     """
     将 provider/model 形式的字符串拆分为 (provider, model)
@@ -28,7 +47,11 @@ class OpenAIBase:
     def __init__(self, api_key, base_url, model_name, model_identifier=None, **kwargs):
         self.api_key = api_key
         self.base_url = base_url
-        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        try:
+            request_timeout = float(os.getenv("YUXI_CHAT_REQUEST_TIMEOUT", "600"))
+        except ValueError:
+            request_timeout = 600.0
+        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=request_timeout)
         self.model_name = model_name
         self.model_identifier = model_identifier or model_name
         self.info = kwargs
@@ -52,8 +75,8 @@ class OpenAIBase:
         return payload
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
+        stop=stop_after_attempt(CHAT_RETRY_ATTEMPTS),
+        wait=wait_exponential(multiplier=1, min=CHAT_RETRY_MIN_WAIT, max=CHAT_RETRY_MAX_WAIT),
         retry=retry_if_exception_type((Exception,)),
         before_sleep=before_sleep_log(logger, log_level="WARNING"),
         reraise=True,

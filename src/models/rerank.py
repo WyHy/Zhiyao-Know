@@ -22,7 +22,11 @@ class BaseReranker(ABC):
         self.api_key = api_key
         self.headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         self.session: aiohttp.ClientSession | None = None
-        self.timeout = aiohttp.ClientTimeout(total=30)
+        try:
+            request_timeout = float(os.getenv("YUXI_RERANK_REQUEST_TIMEOUT", "600"))
+        except ValueError:
+            request_timeout = 600.0
+        self.timeout = aiohttp.ClientTimeout(total=request_timeout)
         self.parameters: dict[str, Any] = dict(kwargs.get("parameters", {}))
 
     async def _ensure_session(self) -> None:
